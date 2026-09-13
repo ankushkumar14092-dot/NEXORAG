@@ -4,6 +4,7 @@ from pathlib import Path
 
 import aiofiles
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -41,6 +42,24 @@ app = FastAPI(title="Nexora Evidence Desk", version="0.6.0")
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(ApiKeyMiddleware)
 app.add_middleware(RequestContextMiddleware)
+
+_cors = [o.strip() for o in (settings.cors_origins or "*").split(",") if o.strip()]
+if _cors == ["*"]:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

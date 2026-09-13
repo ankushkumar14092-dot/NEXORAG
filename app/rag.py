@@ -130,6 +130,27 @@ class Retriever:
 retriever = Retriever()
 
 
+def _strip_model_preamble(text: str) -> str:
+    """Drop leaked chain-of-thought / planning before the real briefing."""
+    raw = (text or "").strip()
+    if not raw:
+        return raw
+    # Prefer first markdown Finding heading
+    for marker in ("# Finding", "# finding", "# Finding:", "# निष्कर्ष", "# Finding —"):
+        idx = raw.find(marker)
+        if idx >= 0:
+            return raw[idx:].strip()
+    # Plain "Finding:" / "Finding" start of draft after "Let me draft"
+    for marker in ("\nFinding:", "\nFinding\n", "\n## Finding", "\n# Finding"):
+        idx = raw.find(marker)
+        if idx >= 0:
+            return raw[idx:].lstrip("\n").strip()
+    # If model started with "Finding:" without #
+    if raw.lower().startswith("finding"):
+        return raw
+    return raw
+
+
 def answer_with_context(question: str, hits: list[Hit]) -> str:
     if not hits:
         return no_evidence_reply(question)
@@ -154,18 +175,24 @@ def answer_with_context(question: str, hits: list[Hit]) -> str:
 
     system = (
         "You are an evidence briefing writer for an investigation desk. "
-        "Answer ONLY from the provided evidence. Never invent facts. "
+        "Ground every claim in the provided evidence only — never invent facts "
+        "and never add outside knowledge. "
         "Cite evidence numbers like [1], [2] inline. "
         "If passages conflict, state both sides under Conflicts. "
         "If evidence is insufficient, say so clearly under Limits. "
-        "Your response must start with the Finding heading — never with analysis about the user. "
+        "CRITICAL OUTPUT RULES: "
+        "Reply with ONLY the final markdown briefing. "
+        "Do NOT write planning, reasoning, self-talk, or phrases like "
+        "'The user asked', 'I need to write', 'Let me draft', 'Evidence is from'. "
+        "First character of the response must start the Finding heading (# Finding). "
         + answer_language_rules(question)
     )
     user = (
         f"Question: {question}\n\n"
         f"Evidence (may be in another language — translate findings into the question language):\n{context}\n\n"
         "Write a readable briefing in exactly this Markdown structure "
-        "(section titles may be translated to match the question language):\n\n"
+        "(section titles may be translated to match the question language). "
+        "Start immediately with the Finding heading — no preamble:\n\n"
         "# Finding\n"
         "One clear paragraph answering the question.\n\n"
         "## Claims\n"
@@ -181,7 +208,7 @@ def answer_with_context(question: str, hits: list[Hit]) -> str:
     )
 
     try:
-        return generate_answer(system, user)
+        return _strip_model_preamble(generate_answer(system, user))
     except Exception as exc:
         return f"(LLM unavailable: {exc})\n\n{extractive()}"
 

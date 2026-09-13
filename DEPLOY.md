@@ -34,7 +34,18 @@ fly volumes create nexora_data --size 10 --region sin
 fly deploy
 ```
 
-## 4. Notes
+## 4. Frontend on Vercel (UI only)
+
+Backend stays on Render (`https://nexorag.onrender.com`). Static UI:
+
+```bash
+cd frontend
+vercel --prod
+```
+
+`frontend/config.js` sets `window.NEXORA_API_BASE`. On Render, set `CORS_ORIGINS=*` (default) or your Vercel URL.
+
+## 5. Notes
 
 - Single worker (`--workers 1`) — in-memory RAM cache + BM25 index are process-local.
 - Video URL ingest needs outbound network + yt-dlp; some hosts block YouTube.

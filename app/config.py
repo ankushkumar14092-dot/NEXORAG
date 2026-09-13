@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 120
     api_key: str = ""  # if set, required on /api/* (except health/ready/metrics)
     alert_webhook_url: str = ""  # optional POST JSON on 5xx
+    # Comma-separated browser origins for Vercel/frontend ("*" = allow all)
+    cors_origins: str = "*"
 
 
 settings = Settings()
