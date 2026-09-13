@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexora — Evidence Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500;75..125,650;75..125,800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --black: #0e0e0c;
+      --ink: #171714;
+      --paper: #f1eee6;
+      --sheet: #faf8f2;
+      --rule: #cfc9bb;
+      --mute: #6b675c;
+      --signal: #d64520;
+      --ok: #1c4d3a;
+      --warn: #8a6a1f;
+      --bad: #a1281f;
+      --font-ui: "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --font-read: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      --font-meta: "IBM Plex Mono", "SF Mono", ui-monospace, monospace;
+      --fs-2xs: 0.6875rem;
+      --fs-xs: 0.75rem;
+      --fs-sm: 0.8125rem;
+      --fs-md: 0.9375rem;
+      --fs-base: 1rem;
+      --fs-lg: 1.125rem;
+      --fs-xl: 1.25rem;
+      --fs-2xl: 1.375rem;
+      --fs-3xl: clamp(1.625rem, 2.4vw, 2.125rem);
+      --fs-display: clamp(2.5rem, 6vw, 4rem);
+      --lh-tight: 1.05;
+      --lh-snug: 1.25;
+      --lh-body: 1.7;
+      --lh-meta: 1.45;
+      --measure: 38rem;
+      --space-1: 6px;
+      --space-2: 10px;
+      --space-3: 14px;
+      --space-4: 18px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --space-7: 48px;
+      --ease: 160ms ease;
+    }
+    * { box-sizing: border-box; }
+    html { font-size: 16px; }
+    @media (max-width: 720px) { html { font-size: 15px; } }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      color: var(--ink);
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(90deg, rgba(14,14,12,0.035) 1px, transparent 1px),
+        linear-gradient(rgba(14,14,12,0.035) 1px, transparent 1px);
+      background-size: 28px 28px;
+      font-family: var(--font-ui);
+      font-size: var(--fs-base);
+      line-height: var(--lh-snug);
+      font-optical-sizing: auto;
+      font-feature-settings: "ss01" on, "kern" on;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+
+    .page {
+      width: min(1480px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: var(--space-5) 0 var(--space-7);
+    }
+
+    .masthead {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(160px, 0.75fr) minmax(180px, 0.7fr);
+      gap: var(--space-5);
+      align-items: end;
+      padding-bottom: var(--space-4);
+      border-bottom: 2px solid var(--black);
+      margin-bottom: var(--space-5);
+    }
+    @media (max-width: 900px) {
+      .masthead { grid-template-columns: 1fr; gap: var(--space-3); }
+      .mast-actions { justify-content: stretch; max-width: 280px; }
+    }
+
+    .wordmark {
+      margin: 0;
+      font-family: var(--font-ui);
+      font-size: var(--fs-display);
+      line-height: 0.86;
+      letter-spacing: -0.055em;
+      font-weight: 800;
+      font-stretch: 90%;
+      text-transform: uppercase;
+    }
+    .wordmark em { font-style: normal; color: var(--signal); }
+
+    .mast-meta {
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      line-height: var(--lh-meta);
+      color: var(--mute);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      border-left: 1px solid var(--rule);
+      padding-left: var(--space-3);
+      max-width: 28ch;
+    }
+    .mast-meta strong {
+      display: block;
+      color: var(--ink);
+      font-weight: 500;
+      font-size: var(--fs-xs);
+      margin-bottom: var(--space-1);
+      letter-spacing: 0.1em;
+    }
+
+    .mast-actions {
+      display: flex;
+      justify-content: flex-end;
+      align-self: end;
+      border: 1px solid var(--black);
+      min-height: 46px;
+    }
+    .mast-actions button {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      padding: 13px 14px;
+      font-size: var(--fs-xs);
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      border-right: 1px solid var(--black);
+      transition: background var(--ease), color var(--ease);
+    }
+    .mast-actions button:last-child { border-right: 0; }
+    .mast-actions button:hover { background: rgba(14,14,12,0.06); }
+    .mast-actions button.active { background: var(--black); color: var(--paper); }
+    .mast-actions button.active:hover { background: var(--black); }
+
+    .desk {
+      display: grid;
+      grid-template-columns: 332px minmax(0, 1fr);
+      border: 1px solid var(--black);
+      background: var(--sheet);
+      min-height: calc(100vh - 170px);
+      overflow: hidden;
+    }
+    @media (max-width: 980px) {
+      .desk { grid-template-columns: 1fr; min-height: auto; overflow: visible; }
+      .index { border-right: 0; border-bottom: 1px solid var(--black); }
+    }
+
+    .index {
+      border-right: 1px solid var(--black);
+      background: #ebe6db;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      max-height: calc(100vh - 170px);
+    }
+    @media (max-width: 980px) { .index { max-height: none; } }
+
+    .index-head {
+      padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid var(--black);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-shrink: 0;
+    }
+    .index-head h2 {
+      margin: 0;
+      font-size: var(--fs-xs);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .index-head span {
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      color: var(--mute);
+    }
+
+    .index-body {
+      padding: var(--space-4);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .zone {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .zone-split {
+      border-top: 1px solid var(--black);
+      padding-top: var(--space-4);
+    }
+    .zone-grow {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border-top: 1px solid var(--black);
+      padding-top: var(--space-4);
+    }
+
+    .field { margin-bottom: 0; }
+    .field label {
+      display: block;
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--mute);
+      margin-bottom: var(--space-1);
+    }
+    .field input[type="url"],
+    .field input[type="file"],
+    .field select {
+      width: 100%;
+      background: var(--sheet);
+      border: 1px solid var(--black);
+      border-radius: 0;
+      padding: 12px 12px;
+      outline: none;
+      font-family: var(--font-ui);
+      font-size: var(--fs-md);
+      transition: outline var(--ease);
+    }
+    .field input[type="file"] {
+      padding: 10px;
+      background: transparent;
+      border-style: dashed;
+      font-size: var(--fs-xs);
+    }
+    .field select:focus,
+    .field input:focus,
+    .askbox textarea:focus { outline: 2px solid var(--signal); outline-offset: -2px; }
+
+    .row-btns { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--black); }
+    .row-btns button {
+      border: 0;
+      background: transparent;
+      padding: 12px 8px;
+      font-size: var(--fs-2xs);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-right: 1px solid var(--black);
+      transition: background var(--ease), color var(--ease);
+    }
+    .row-btns button:last-child { border-right: 0; }
+    .row-btns button:hover { background: rgba(14,14,12,0.06); }
+    .row-btns button.fill { background: var(--black); color: var(--paper); }
+    .row-btns button.fill:hover { background: #1c1c18; color: var(--paper); }
+    .row-btns button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .note {
+      margin: 0;
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      line-height: var(--lh-meta);
+      color: var(--mute);
+    }
+    .note.bad { color: var(--bad); }
+
+    .source-list {
+      margin-top: var(--space-2);
+      border-top: 1px solid var(--rule);
+      flex: 1;
+      min-height: 120px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .source-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px;
+      align-items: start;
+      border-bottom: 1px solid var(--rule);
+      padding: 4px 0;
+    }
+    .source {
+      padding: 10px 8px;
+      cursor: pointer;
+      transition: background var(--ease);
+      min-width: 0;
+    }
+    .source-del {
+      margin-top: 8px;
+      border: 1px solid var(--black);
+      background: transparent;
+      color: var(--ink);
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 7px 8px;
+      transition: background var(--ease), color var(--ease);
+    }
+    .source-del:hover {
+      background: var(--black);
+      color: var(--paper);
+    }
+    .source-row:hover .source { background: rgba(14,14,12,0.04); }
+    .source-row.active .source {
+      background: rgba(214,69,32,0.08);
+      outline: 1px solid rgba(214,69,32,0.35);
+      outline-offset: -1px;
+    }
+    .source .t {
+      font-size: var(--fs-md);
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      line-height: 1.3;
+      margin-bottom: 5px;
+      word-break: break-word;
+    }
+    .source .m {
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      color: var(--mute);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .st-ready { color: var(--ok); }
+    .st-processing, .st-queued { color: var(--warn); }
+    .st-error { color: var(--bad); }
+
+    .stage {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-width: 0;
+      min-height: 0;
+      background: var(--sheet);
+    }
+    .askbox {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      padding: var(--space-4) var(--space-5);
+      border-bottom: 1px solid var(--black);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 128px;
+      gap: var(--space-3);
+      align-items: stretch;
+      background: #f4f0e7;
+    }
+    @media (max-width: 720px) { .askbox { grid-template-columns: 1fr; position: static; } }
+    .askbox textarea {
+      width: 100%;
+      min-height: 88px;
+      resize: vertical;
+      border: 1px solid var(--black);
+      border-radius: 0;
+      padding: 14px 16px;
+      outline: none;
+      font-family: var(--font-read);
+      font-optical-sizing: auto;
+      font-size: var(--fs-lg);
+      line-height: 1.5;
+      font-weight: 400;
+      background: #fff;
+    }
+    .ask-side { display: grid; grid-template-rows: 1fr auto; gap: var(--space-2); }
+    .ask-side button {
+      border: 1px solid var(--black);
+      background: var(--signal);
+      color: #fff;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-size: var(--fs-xs);
+      transition: filter var(--ease), transform var(--ease);
+    }
+    .ask-side button:hover { filter: brightness(0.95); }
+    .ask-side button:active { transform: translateY(1px); }
+    .ask-side button:disabled { filter: grayscale(0.4); opacity: 0.6; }
+    .ask-status {
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      color: var(--mute);
+      line-height: var(--lh-meta);
+      text-align: right;
+    }
+
+    .folio {
+      padding: var(--space-6) clamp(24px, 5vw, 64px) var(--space-7);
+      max-width: calc(var(--measure) + 8rem);
+      margin: 0 auto;
+      width: 100%;
+      overflow: auto;
+    }
+    @media (max-width: 720px) { .folio { padding: var(--space-5) var(--space-4) var(--space-6); } }
+
+    .folio-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 26px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .folio-toolbar .label {
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--mute);
+    }
+    .folio-toolbar .tools { display: flex; border: 1px solid var(--black); }
+    .folio-toolbar .tools button {
+      border: 0;
+      background: transparent;
+      padding: 8px 14px;
+      font-size: var(--fs-2xs);
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      border-right: 1px solid var(--black);
+      transition: background var(--ease);
+    }
+    .folio-toolbar .tools button:last-child { border-right: 0; }
+    .folio-toolbar .tools button:hover { background: rgba(14,14,12,0.05); }
+
+    .kicker {
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--signal);
+      margin-bottom: 12px;
+    }
+    .question {
+      margin: 0 0 26px;
+      font-family: var(--font-ui);
+      font-size: var(--fs-3xl);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.04em;
+      font-weight: 800;
+      font-stretch: 92%;
+      max-width: 18ch;
+    }
+    .empty {
+      font-family: var(--font-read);
+      font-optical-sizing: auto;
+      font-size: var(--fs-lg);
+      line-height: var(--lh-body);
+      color: var(--mute);
+      max-width: var(--measure);
+      border-top: 1px solid var(--rule);
+      padding-top: 18px;
+    }
+
+    .md {
+      font-family: var(--font-read);
+      font-optical-sizing: auto;
+      font-size: var(--fs-xl);
+      line-height: var(--lh-body);
+      color: #1a1a16;
+      max-width: var(--measure);
+    }
+    .md h1, .md h2, .md h3 {
+      font-family: var(--font-ui);
+      letter-spacing: -0.025em;
+      line-height: var(--lh-snug);
+      margin: 1.75em 0 0.55em;
+      font-weight: 800;
+    }
+    .md h1 {
+      font-size: var(--fs-2xl);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 2px solid var(--black);
+      padding-bottom: 10px;
+    }
+    .md h2 {
+      font-size: var(--fs-xs);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--mute);
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 8px;
+      font-weight: 700;
+    }
+    .md h3 { font-size: var(--fs-lg); letter-spacing: -0.02em; }
+    .md p { margin: 0.85em 0; }
+    .md ul, .md ol { margin: 0.55em 0 1.1em; padding-left: 1.2em; }
+    .md li { margin: 0.45em 0; }
+    .md strong { font-weight: 600; }
+    .md blockquote {
+      margin: 1.2em 0;
+      padding: 0 0 0 16px;
+      border-left: 3px solid var(--signal);
+      color: #333;
+      font-style: italic;
+    }
+    .cite {
+      display: inline;
+      font-family: var(--font-meta);
+      font-size: 0.72em;
+      font-style: normal;
+      font-weight: 500;
+      color: var(--signal);
+      border: 0;
+      background: transparent;
+      padding: 0 1px;
+      vertical-align: super;
+      line-height: 0;
+      cursor: pointer;
+    }
+    .cite:hover { text-decoration: underline; }
+
+    .passages {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 2px solid var(--black);
+      max-width: var(--measure);
+    }
+    .passages > h3 {
+      margin: 0 0 16px;
+      font-size: var(--fs-xs);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .ev {
+      display: grid;
+      grid-template-columns: 3.25rem 1fr;
+      gap: 14px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .ev-num {
+      font-family: var(--font-meta);
+      font-size: var(--fs-xs);
+      font-weight: 500;
+      color: var(--signal);
+      padding-top: 3px;
+    }
+    .ev-loc {
+      font-family: var(--font-meta);
+      font-size: var(--fs-2xs);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--mute);
+      margin-bottom: 4px;
+    }
+    .ev-title {
+      font-size: var(--fs-md);
+      font-weight: 700;
+      margin-bottom: 7px;
+      letter-spacing: -0.015em;
+      line-height: 1.3;
+    }
+    .ev-text {
+      font-family: var(--font-read);
+      font-optical-sizing: auto;
+      font-size: var(--fs-md);
+      line-height: 1.6;
+      color: #2c2c27;
+    }
+    .ev.flash {
+      background: rgba(214,69,32,0.08);
+      margin: 0 -10px;
+      padding-left: 10px;
+      padding-right: 10px;
+    }
+
+    .hidden { display: none !important; }
+    @media print {
+      body { background: #fff; }
+      .mast-actions, .index, .askbox, .folio-toolbar .tools { display: none !important; }
+      .desk { border: 0; display: block; }
+      .folio { max-width: none; padding: 0; }
+      .page { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <h1 class="wordmark">Nexora<br /><em>Evidence</em></h1>
+      <div class="mast-meta">
+        <strong>Evidence desk</strong>
+        Index sources.<br />
+        Ask one question.<br />
+        Read the briefing.
+      </div>
+      <div class="mast-actions" role="tablist">
+        <button class="active" id="tabDocs" onclick="setMode('document')">Docs</button>
+        <button id="tabVideo" onclick="setMode('video')">Video</button>
+      </div>
+    </header>
+
+    <div class="desk">
+      <aside class="index">
+        <div class="index-head">
+          <h2 id="ingestTitle">Index</h2>
+          <span id="sourceCount">00</span>
+        </div>
+        <div class="index-body">
+          <div class="zone" id="ingestZone">
+          <div id="videoIngest" class="hidden">
+            <div class="field">
+              <label for="url">URL</label>
+              <input id="url" type="url" placeholder="https://youtube.com/watch?v=..." />
+            </div>
+            <div class="row-btns">
+              <button class="fill" onclick="ingestUrl()">Process</button>
+              <button onclick="refreshSources()">Refresh</button>
+            </div>
+            <div class="field" style="margin-top:14px">
+              <label for="fileVideo">File</label>
+              <input id="fileVideo" type="file" accept="video/*,audio/*" />
+            </div>
+            <div class="row-btns">
+              <button class="fill" onclick="ingestVideoUpload()">Upload</button>
+              <button onclick="document.getElementById('fileVideo').click()">Browse</button>
+            </div>
+          </div>
+
+          <div id="docIngest">
+            <div class="field">
+              <label for="fileDoc">Document file</label>
+              <input id="fileDoc" type="file" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls,.json,.xml,.pptx,.html,.htm" />
+            </div>
+            <div class="row-btns">
+              <button class="fill" onclick="ingestDocUpload()">Upload</button>
+              <button onclick="refreshSources()">Refresh</button>
+            </div>
+            <p class="note">PDF · DOCX · XLSX · TXT · CSV · PPTX · JSON</p>
+          </div>
+
+          <p class="note" id="ingestMsg">Ready.</p>
+          </div>
+
+          <div class="zone zone-split">
+            <div class="field">
+              <label for="scope">Scope</label>
+              <select id="scope">
+                <option value="">All in mode</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="zone-grow">
+            <div class="field">
+              <label>Sources</label>
+            </div>
+            <div class="source-list" id="sources"></div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="stage">
+        <div class="askbox">
+          <textarea id="question" placeholder="Write the question as you would brief an analyst…"></textarea>
+          <div class="ask-side">
+            <button id="btnAsk" onclick="ask()">Ask</button>
+            <div class="ask-status" id="askMsg">Stand by</div>
+          </div>
+        </div>
+
+        <article class="folio" id="reportBody">
+          <div class="folio-toolbar">
+            <div class="label">Folio / Briefing</div>
+            <div class="tools">
+              <button onclick="copyReport()">Copy</button>
+              <button onclick="window.print()">Print</button>
+            </div>
+          </div>
+          <div class="kicker">No query yet</div>
+          <h2 class="question">Open a source. Ask once. Read the record.</h2>
+          <p class="empty">This desk formats answers as a briefing — finding, points, evidence notes, and limits — with superscript citations tied to exact pages, cells, or timestamps.</p>
+        </article>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    let mode = "document";
+    let selectedId = null;
+    let pollTimer = null;
+    let lastReportText = "";
+    let lastQuestion = "";
+
+    function setMode(next) {
+      mode = next;
+      selectedId = null;
+      document.getElementById("tabDocs").classList.toggle("active", mode === "document");
+      document.getElementById("tabVideo").classList.toggle("active", mode === "video");
+      document.getElementById("docIngest").classList.toggle("hidden", mode !== "document");
+      document.getElementById("videoIngest").classList.toggle("hidden", mode !== "video");
+      document.getElementById("ingestTitle").textContent = mode === "document" ? "Index" : "Reels";
+      refreshSources();
+    }
+
+    async function ingestUrl() {
+      const url = document.getElementById("url").value.trim();
+      if (!url) return alert("Paste a URL");
+      setMsg("ingestMsg", "Queuing URL…");
+      const res = await fetch("/api/ingest/url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setMsg("ingestMsg", data.detail || "Failed", true);
+      selectedId = data.source.id;
+      setMsg("ingestMsg", `Queued · ${data.source.title}`);
+      startPolling();
+      await refreshSources();
+    }
+
+    async function ingestVideoUpload() {
+      const fileInput = document.getElementById("fileVideo");
+      if (!fileInput.files.length) return alert("Choose a file");
+      const fd = new FormData();
+      fd.append("file", fileInput.files[0]);
+      setMsg("ingestMsg", "Uploading…");
+      const res = await fetch("/api/ingest/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) return setMsg("ingestMsg", data.detail || "Upload failed", true);
+      selectedId = data.source.id;
+      setMsg("ingestMsg", `Queued · ${data.source.title}`);
+      startPolling();
+      await refreshSources();
+    }
+
+    async function ingestDocUpload() {
+      const fileInput = document.getElementById("fileDoc");
+      if (!fileInput.files.length) return alert("Choose a document");
+      const fd = new FormData();
+      fd.append("file", fileInput.files[0]);
+      setMsg("ingestMsg", "Uploading…");
+      const res = await fetch("/api/ingest/document", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) return setMsg("ingestMsg", data.detail || "Upload failed", true);
+      selectedId = data.source.id;
+      setMsg("ingestMsg", `Queued · ${data.source.title}`);
+      startPolling();
+      await refreshSources();
+    }
+
+
+    async function deleteSource(id, title) {
+      const label = title || id;
+      if (!confirm(`Delete "${label}"?\n\nThis removes the source, its index, and cleaned files.`)) {
+        return;
+      }
+      setMsg("ingestMsg", `Deleting · ${label}`);
+      try {
+        const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMsg("ingestMsg", data.detail || "Delete failed", true);
+          return;
+        }
+        if (selectedId === id) selectedId = null;
+        setMsg("ingestMsg", `Deleted · ${data.title || label}`);
+        await refreshSources();
+      } catch (err) {
+        setMsg("ingestMsg", "Delete failed", true);
+      }
+    }
+
+    async function refreshSources() {
+      const res = await fetch(`/api/sources?kind=${mode}`);
+      const data = await res.json();
+      const box = document.getElementById("sources");
+      const scope = document.getElementById("scope");
+      const currentScope = scope.value;
+      box.innerHTML = "";
+      scope.innerHTML = `<option value="">All in mode</option>`;
+      document.getElementById("sourceCount").textContent = String(data.sources.length).padStart(2, "0");
+
+      for (const v of data.sources) {
+        const row = document.createElement("div");
+        row.className = "source-row" + (v.id === selectedId ? " active" : "");
+
+        const div = document.createElement("div");
+        div.className = "source";
+        div.onclick = () => { selectedId = v.id; scope.value = v.id; refreshSources(); };
+        div.innerHTML = `
+          <div class="t">${escapeHtml(v.title)}</div>
+          <div class="m">
+            <span class="st-${v.status}">${v.status}</span>
+            <span>${escapeHtml(v.doc_type || v.transcript_method || mode)}</span>
+            <span>${v.chunk_count || 0} ch</span>
+          </div>
+          ${v.error ? `<div class="note bad">${escapeHtml(v.error)}</div>` : ""}
+        `;
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "source-del";
+        del.textContent = "Delete";
+        del.title = "Delete source permanently";
+        del.onclick = (ev) => { ev.stopPropagation(); deleteSource(v.id, v.title); };
+
+        row.appendChild(div);
+        row.appendChild(del);
+        box.appendChild(row);
+
+        if (v.status === "ready") {
+          const opt = document.createElement("option");
+          opt.value = v.id;
+          opt.textContent = v.title;
+          scope.appendChild(opt);
+        }
+      }
+      if ([...scope.options].some(o => o.value === currentScope)) scope.value = currentScope;
+      else if (selectedId) scope.value = selectedId;
+
+      const busy = data.sources.some(v => v.status === "queued" || v.status === "processing");
+      if (busy) startPolling();
+      else stopPolling();
+    }
+
+    async function ask() {
+      const question = document.getElementById("question").value.trim();
+      if (!question) return alert("Enter a question");
+      const source_id = document.getElementById("scope").value || null;
+      setMsg("askMsg", "Composing…");
+      document.getElementById("btnAsk").disabled = true;
+      renderShell(question, "Retrieving passages and setting type…");
+      try {
+        const res = await fetch("/api/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, source_id, kind: mode }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setMsg("askMsg", data.detail || "Query failed", true);
+          return;
+        }
+        lastQuestion = question;
+        lastReportText = data.answer || "";
+        renderReport(question, data.answer || "", data.evidence || []);
+        setMsg("askMsg", `${String(data.evidence.length).padStart(2,"0")} passages`);
+      } finally {
+        document.getElementById("btnAsk").disabled = false;
+      }
+    }
+
+    function renderShell(question, statusText) {
+      document.getElementById("reportBody").innerHTML = `
+        <div class="folio-toolbar">
+          <div class="label">Folio / Draft</div>
+          <div class="tools">
+            <button onclick="copyReport()">Copy</button>
+            <button onclick="window.print()">Print</button>
+          </div>
+        </div>
+        <div class="kicker">In progress</div>
+        <h2 class="question">${escapeHtml(question)}</h2>
+        <p class="empty">${escapeHtml(statusText)}</p>
+      `;
+    }
+
+    function renderReport(question, answer, evidence) {
+      const body = document.getElementById("reportBody");
+      const md = renderMarkdown(answer);
+      const evHtml = evidence.map((e, i) => `
+        <div class="ev" id="ev-${i + 1}">
+          <div class="ev-num">[${String(i + 1).padStart(2,"0")}]</div>
+          <div>
+            <div class="ev-loc">${escapeHtml(e.location || "location n/a")}</div>
+            <div class="ev-title">${escapeHtml(e.source_title || "Source")}</div>
+            <div class="ev-text">${escapeHtml(e.text || "")}</div>
+          </div>
+        </div>
+      `).join("");
+
+      body.innerHTML = `
+        <div class="folio-toolbar">
+          <div class="label">Folio / ${new Date().toLocaleDateString()}</div>
+          <div class="tools">
+            <button onclick="copyReport()">Copy</button>
+            <button onclick="window.print()">Print</button>
+          </div>
+        </div>
+        <div class="kicker">Evidence briefing</div>
+        <h2 class="question">${escapeHtml(question)}</h2>
+        <div class="md">${md}</div>
+        <div class="passages">
+          <h3>Source passages</h3>
+          ${evHtml || '<p class="empty">No passages returned.</p>'}
+        </div>
+      `;
+
+      body.querySelectorAll(".cite").forEach((el) => {
+        el.addEventListener("click", () => {
+          const n = el.dataset.n;
+          const target = document.getElementById(`ev-${n}`);
+          if (!target) return;
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+          target.classList.add("flash");
+          setTimeout(() => target.classList.remove("flash"), 900);
+        });
+      });
+    }
+
+    function renderMarkdown(src) {
+      const lines = String(src || "").replace(/\r\n/g, "\n").split("\n");
+      let html = "";
+      let inUl = false;
+      let inOl = false;
+      let para = [];
+
+      const flushPara = () => {
+        if (!para.length) return;
+        html += `<p>${inline(para.join(" "))}</p>`;
+        para = [];
+      };
+      const closeLists = () => {
+        if (inUl) { html += "</ul>"; inUl = false; }
+        if (inOl) { html += "</ol>"; inOl = false; }
+      };
+
+      for (const raw of lines) {
+        const line = raw.trimEnd();
+        const t = line.trim();
+        if (!t) { flushPara(); closeLists(); continue; }
+        if (/^###\s+/.test(t)) { flushPara(); closeLists(); html += `<h3>${inline(t.replace(/^###\s+/, ""))}</h3>`; continue; }
+        if (/^##\s+/.test(t)) { flushPara(); closeLists(); html += `<h2>${inline(t.replace(/^##\s+/, ""))}</h2>`; continue; }
+        if (/^#\s+/.test(t)) { flushPara(); closeLists(); html += `<h1>${inline(t.replace(/^#\s+/, ""))}</h1>`; continue; }
+        if (/^[-*]\s+/.test(t)) {
+          flushPara();
+          if (inOl) { html += "</ol>"; inOl = false; }
+          if (!inUl) { html += "<ul>"; inUl = true; }
+          html += `<li>${inline(t.replace(/^[-*]\s+/, ""))}</li>`;
+          continue;
+        }
+        if (/^\d+\.\s+/.test(t)) {
+          flushPara();
+          if (inUl) { html += "</ul>"; inUl = false; }
+          if (!inOl) { html += "<ol>"; inOl = true; }
+          html += `<li>${inline(t.replace(/^\d+\.\s+/, ""))}</li>`;
+          continue;
+        }
+        if (/^>\s+/.test(t)) { flushPara(); closeLists(); html += `<blockquote>${inline(t.replace(/^>\s+/, ""))}</blockquote>`; continue; }
+        closeLists();
+        para.push(t);
+      }
+      flushPara(); closeLists();
+      return html || `<p class="empty">No briefing text returned.</p>`;
+    }
+
+    function inline(text) {
+      let s = escapeHtml(text);
+      s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+      s = s.replace(/\[(\d+)\]/g, '<button type="button" class="cite" data-n="$1">[$1]</button>');
+      return s;
+    }
+
+    async function copyReport() {
+      const text = [lastQuestion ? `Question: ${lastQuestion}` : "", "", lastReportText || ""].join("\n").trim();
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setMsg("askMsg", "Copied");
+      } catch {
+        setMsg("askMsg", "Copy failed", true);
+      }
+    }
+
+    function setMsg(id, text, bad=false) {
+      const el = document.getElementById(id);
+      el.textContent = typeof text === "string" ? text : JSON.stringify(text);
+      el.classList.toggle("bad", !!bad);
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function startPolling() {
+      if (pollTimer) return;
+      pollTimer = setInterval(refreshSources, 2500);
+    }
+    function stopPolling() {
+      if (!pollTimer) return;
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+
+    refreshSources();
+  </script>
+</body>
+</html>

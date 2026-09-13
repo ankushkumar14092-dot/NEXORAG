@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: nexora-evidence
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/ready
+    envVars:
+      - key: FIREWORKS_API_KEY
+        sync: false
+      - key: FIREWORKS_MODEL
+        value: accounts/fireworks/models/deepseek-v4-pro-0813
+      - key: FIREWORKS_BASE_URL
+        value: https://api.fireworks.ai/inference/v1
+      - key: WHISPER_MODEL
+        value: base
+      - key: MAX_UPLOAD_MB
+        value: "200"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "60"
+    disk:
+      name: nexora-data
+      mountPath: /app/data
+      sizeGB: 10

@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+data/
+*.mp4
+*.mp3
+*.mov
+*.mkv
+*.webm
+.DS_Store
+.pytest_cache/
+.cursor/
+*.log
