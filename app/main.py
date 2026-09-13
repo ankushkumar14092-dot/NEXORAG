@@ -8,10 +8,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.auth import ApiKeyMiddleware, api_key_configured
+from app.capabilities import capabilities_payload
 from app.config import settings
 from app.docs_parse import DOC_EXTENSIONS
 from app.llm import llm_status
 from app.memory import query_cache
+from app.metrics import metrics
 from app.models import store
 from app.observability import (
     RateLimitMiddleware,
@@ -19,20 +22,24 @@ from app.observability import (
     configure_logging,
     logger,
 )
+from app.modality import detect_file, detect_url
 from app.pipeline import (
     create_document_record,
     create_upload_record,
     create_url_record,
+    create_web_record,
     process_document,
     process_video,
 )
+from app.recovery import backup_store, list_backups, restore_store
 from app.security import SecurityError, sanitize_filename
 from app.services import build_upload_path, query_service, source_service
 
 configure_logging()
 
-app = FastAPI(title="Nexora Evidence Desk", version="0.4.0")
+app = FastAPI(title="Nexora Evidence Desk", version="0.6.0")
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(ApiKeyMiddleware)
 app.add_middleware(RequestContextMiddleware)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -57,12 +64,20 @@ class UrlIngestRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=2000)
 
 
+class WebIngestRequest(BaseModel):
+    url: str = Field(..., min_length=8, max_length=2000)
+
+
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=2, max_length=4000)
     source_id: str | None = None
     video_id: str | None = None
     kind: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=20)
+
+
+class RestoreRequest(BaseModel):
+    backup_path: str = Field(..., min_length=3, max_length=1000)
 
 
 async def _save_upload(file: UploadFile, dest: Path) -> None:
@@ -94,6 +109,10 @@ async def health() -> dict:
     return {
         "ok": True,
         "status": "live",
+        "version": app.version,
+        "architecture": "modular_monolith",
+        "scale_mode": "vertical_single_process",
+        "auth_required": api_key_configured(),
         **llm_status(),
         "whisper_model": settings.whisper_model,
         "videos": len(store.list(kind="video")),
@@ -104,17 +123,33 @@ async def health() -> dict:
     }
 
 
+@app.get("/api/metrics")
+async def api_metrics() -> dict:
+    """Ops monitoring snapshot."""
+    return {"ok": True, "metrics": metrics.snapshot()}
+
+
+@app.get("/api/capabilities")
+async def capabilities() -> dict:
+    """Honest OmniRAG coverage map — live vs deferred."""
+    return capabilities_payload()
+
+
 @app.get("/api/ready")
 async def ready() -> dict:
     """Readiness: store + data dirs usable."""
     try:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         _ = store.revision
+        backup_dir = settings.data_dir / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
         return {
             "ok": True,
             "status": "ready",
             "store_revision": store.revision,
             "data_dir": str(settings.data_dir),
+            "backups_dir": str(backup_dir),
+            "auth_required": api_key_configured(),
         }
     except Exception as exc:
         logger.exception("readiness_failed")
@@ -202,6 +237,19 @@ async def ingest_url(
     return {"video": record.public_dict(), "source": record.public_dict()}
 
 
+@app.post("/api/ingest/web")
+async def ingest_web(
+    body: WebIngestRequest,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    url = body.url.strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "URL must start with http:// or https://")
+    record = create_web_record(url)
+    background_tasks.add_task(process_document, record.id)
+    return {"document": record.public_dict(), "source": record.public_dict()}
+
+
 @app.post("/api/ingest/upload")
 async def ingest_upload(
     background_tasks: BackgroundTasks,
@@ -245,6 +293,67 @@ async def ingest_document(
     record = create_document_record(safe_name, dest)
     background_tasks.add_task(process_document, record.id)
     return {"document": record.public_dict(), "source": record.public_dict()}
+
+
+@app.post("/api/ingest/auto")
+async def ingest_auto(
+    background_tasks: BackgroundTasks,
+    file: UploadFile | None = File(None),
+    url: str | None = None,
+) -> dict:
+    """Anything ingest: detect modality → route to video/doc/web pipeline."""
+    if url and url.strip():
+        decision = detect_url(url.strip())
+        if decision.pipeline == "video":
+            record = create_url_record(url.strip())
+            background_tasks.add_task(process_video, record.id)
+        else:
+            record = create_web_record(url.strip())
+            background_tasks.add_task(process_document, record.id)
+        return {
+            "route": decision.__dict__,
+            "source": record.public_dict(),
+        }
+
+    if not file or not file.filename:
+        raise HTTPException(400, "Provide file or url")
+
+    safe_name = sanitize_filename(file.filename)
+    try:
+        decision = detect_file(safe_name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+    if decision.pipeline == "video":
+        dest = build_upload_path(safe_name, docs=False)
+        await _save_upload(file, dest)
+        record = create_upload_record(safe_name, dest)
+        background_tasks.add_task(process_video, record.id)
+    else:
+        dest = build_upload_path(safe_name, docs=True)
+        await _save_upload(file, dest)
+        record = create_document_record(safe_name, dest)
+        background_tasks.add_task(process_document, record.id)
+
+    return {"route": decision.__dict__, "source": record.public_dict()}
+
+
+@app.post("/api/admin/backup")
+async def admin_backup() -> dict:
+    return backup_store()
+
+
+@app.get("/api/admin/backups")
+async def admin_list_backups() -> dict:
+    return {"backups": list_backups()}
+
+
+@app.post("/api/admin/restore")
+async def admin_restore(body: RestoreRequest) -> dict:
+    try:
+        return restore_store(body.backup_path)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from None
 
 
 @app.post("/api/query")

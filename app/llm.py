@@ -5,41 +5,52 @@ from openai import OpenAI
 from app.config import settings
 
 def llm_status() -> dict:
+    primary = settings.fireworks_fast_model if settings.prefer_fast_model else settings.fireworks_model
     return {
         "provider": "fireworks" if settings.fireworks_api_key else (
             "anthropic" if settings.anthropic_api_key else "none"
         ),
         "fireworks_configured": bool(settings.fireworks_api_key),
         "anthropic_configured": bool(settings.anthropic_api_key),
-        "model": settings.fireworks_model
-        if settings.fireworks_api_key
-        else (settings.anthropic_model if settings.anthropic_api_key else None),
+        "model": primary if settings.fireworks_api_key else (
+            settings.anthropic_model if settings.anthropic_api_key else None
+        ),
+        "prefer_fast_model": settings.prefer_fast_model,
     }
 
-def generate_answer(system: str, user: str, max_tokens: int = 900) -> str:
+
+def generate_answer(system: str, user: str, max_tokens: int | None = None) -> str:
     """Generate grounded answer. Prefers Fireworks, falls back to Anthropic."""
+    tokens = settings.answer_max_tokens if max_tokens is None else max_tokens
     if settings.fireworks_api_key:
-        return _fireworks(system, user, max_tokens)
+        return _fireworks(system, user, tokens)
     if settings.anthropic_api_key:
-        return _anthropic(system, user, max_tokens)
+        return _anthropic(system, user, tokens)
     raise RuntimeError("No LLM API key configured (set FIREWORKS_API_KEY)")
+
 
 def _fireworks(system: str, user: str, max_tokens: int) -> str:
     client = OpenAI(
         base_url=settings.fireworks_base_url,
         api_key=settings.fireworks_api_key,
     )
-    # Try best model first, then strong fallbacks if account lacks access.
-    models = [
-        settings.fireworks_model,
-        "accounts/fireworks/models/deepseek-v4-pro-0813",
-        "accounts/fireworks/models/deepseek-v4-pro",
-        "accounts/fireworks/models/glm-5p3",
-        "accounts/fireworks/models/kimi-k3",
-        "accounts/fireworks/models/qwen3p8-max",
-        "accounts/fireworks/models/gpt-oss-120b",
-        "accounts/fireworks/models/deepseek-v4p1-flash",
-    ]
+    # Prefer fast model when configured for low latency.
+    models = []
+    if settings.prefer_fast_model and settings.fireworks_fast_model:
+        models.append(settings.fireworks_fast_model)
+    models.extend(
+        [
+            settings.fireworks_model,
+            settings.fireworks_fast_model,
+            "accounts/fireworks/models/deepseek-v4-pro-0813",
+            "accounts/fireworks/models/deepseek-v4p1-flash",
+            "accounts/fireworks/models/deepseek-v4-pro",
+            "accounts/fireworks/models/glm-5p3",
+            "accounts/fireworks/models/kimi-k3",
+            "accounts/fireworks/models/qwen3p8-max",
+            "accounts/fireworks/models/gpt-oss-120b",
+        ]
+    )
     # de-dupe preserving order
     seen = set()
     ordered = []

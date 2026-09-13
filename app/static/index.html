@@ -636,14 +636,22 @@
 
           <div id="docIngest">
             <div class="field">
-              <label for="fileDoc">Document file</label>
-              <input id="fileDoc" type="file" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls,.json,.xml,.pptx,.html,.htm" />
+              <label for="webUrl">Web page URL</label>
+              <input id="webUrl" type="url" placeholder="https://example.com/article" />
+            </div>
+            <div class="row-btns">
+              <button class="fill" onclick="ingestWeb()">Index page</button>
+              <button onclick="refreshSources()">Refresh</button>
+            </div>
+            <div class="field" style="margin-top:14px">
+              <label for="fileDoc">Document / image / EPUB</label>
+              <input id="fileDoc" type="file" accept=".pdf,.docx,.txt,.md,.csv,.tsv,.xlsx,.xls,.json,.xml,.pptx,.html,.htm,.epub,.py,.js,.ts,.java,.go,.rs,.sql,.sh,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.gif,image/*" />
             </div>
             <div class="row-btns">
               <button class="fill" onclick="ingestDocUpload()">Upload</button>
-              <button onclick="refreshSources()">Refresh</button>
+              <button onclick="document.getElementById('fileDoc').click()">Browse</button>
             </div>
-            <p class="note">PDF · DOCX · XLSX · TXT · CSV · PPTX · JSON</p>
+            <p class="note">PDF · code · EPUB · images (OCR) · web URL · sheets · hybrid retrieve</p>
           </div>
 
           <p class="note" id="ingestMsg">Ready.</p>
@@ -669,7 +677,7 @@
 
       <section class="stage">
         <div class="askbox">
-          <textarea id="question" placeholder="Write the question as you would brief an analyst…"></textarea>
+          <textarea id="question" placeholder="Ask in English or Hinglish — e.g. is video mein kya bataya?"></textarea>
           <div class="ask-side">
             <button id="btnAsk" onclick="ask()">Ask</button>
             <div class="ask-status" id="askMsg">Stand by</div>
@@ -699,6 +707,19 @@
     let lastReportText = "";
     let lastQuestion = "";
 
+    function apiHeaders(extra = {}) {
+      const headers = { ...extra };
+      const key = localStorage.getItem("nexora_api_key") || "";
+      if (key) headers["X-API-Key"] = key;
+      return headers;
+    }
+
+    async function apiFetch(url, opts = {}) {
+      const options = { ...opts };
+      options.headers = apiHeaders(options.headers || {});
+      return fetch(url, options);
+    }
+
     function setMode(next) {
       mode = next;
       selectedId = null;
@@ -714,7 +735,24 @@
       const url = document.getElementById("url").value.trim();
       if (!url) return alert("Paste a URL");
       setMsg("ingestMsg", "Queuing URL…");
-      const res = await fetch("/api/ingest/url", {
+      const res = await apiFetch("/api/ingest/url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setMsg("ingestMsg", data.detail || "Failed", true);
+      selectedId = data.source.id;
+      setMsg("ingestMsg", `Queued · ${data.source.title}`);
+      startPolling();
+      await refreshSources();
+    }
+
+    async function ingestWeb() {
+      const url = document.getElementById("webUrl").value.trim();
+      if (!url) return alert("Paste a web page URL");
+      setMsg("ingestMsg", "Fetching page…");
+      const res = await apiFetch("/api/ingest/web", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -733,7 +771,7 @@
       const fd = new FormData();
       fd.append("file", fileInput.files[0]);
       setMsg("ingestMsg", "Uploading…");
-      const res = await fetch("/api/ingest/upload", { method: "POST", body: fd });
+      const res = await apiFetch("/api/ingest/upload", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) return setMsg("ingestMsg", data.detail || "Upload failed", true);
       selectedId = data.source.id;
@@ -748,7 +786,7 @@
       const fd = new FormData();
       fd.append("file", fileInput.files[0]);
       setMsg("ingestMsg", "Uploading…");
-      const res = await fetch("/api/ingest/document", { method: "POST", body: fd });
+      const res = await apiFetch("/api/ingest/document", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) return setMsg("ingestMsg", data.detail || "Upload failed", true);
       selectedId = data.source.id;
@@ -765,7 +803,7 @@
       }
       setMsg("ingestMsg", `Deleting · ${label}`);
       try {
-        const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
+        const res = await apiFetch(`/api/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           setMsg("ingestMsg", data.detail || "Delete failed", true);
@@ -780,7 +818,7 @@
     }
 
     async function refreshSources() {
-      const res = await fetch(`/api/sources?kind=${mode}`);
+      const res = await apiFetch(`/api/sources?kind=${mode}`);
       const data = await res.json();
       const box = document.getElementById("sources");
       const scope = document.getElementById("scope");
@@ -836,11 +874,11 @@
       const question = document.getElementById("question").value.trim();
       if (!question) return alert("Enter a question");
       const source_id = document.getElementById("scope").value || null;
-      setMsg("askMsg", "Composing…");
+      setMsg("askMsg", "Asking…");
       document.getElementById("btnAsk").disabled = true;
-      renderShell(question, "Retrieving passages and setting type…");
+      renderShell(question, "Retrieving passages, then writing briefing (LLM)…");
       try {
-        const res = await fetch("/api/query", {
+        const res = await apiFetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ question, source_id, kind: mode }),

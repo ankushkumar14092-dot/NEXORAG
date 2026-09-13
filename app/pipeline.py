@@ -61,6 +61,22 @@ def create_document_record(filename: str, saved_path: Path) -> SourceRecord:
     store.save(record)
     return record
 
+
+def create_web_record(url: str, title: str | None = None) -> SourceRecord:
+    record = SourceRecord(
+        id=new_id("doc"),
+        title=(title or url)[:200],
+        kind="document",
+        source_type="url",
+        source=url,
+        status="queued",
+        created_at=utc_now(),
+        updated_at=utc_now(),
+        doc_type="web",
+    )
+    store.save(record)
+    return record
+
 def process_video(video_id: str) -> None:
     record = store.get(video_id)
     if not record:
@@ -94,17 +110,27 @@ def process_document(doc_id: str) -> None:
     store.save(record)
 
     try:
-        path = Path(record.source)
-        if not path.exists():
-            raise FileNotFoundError(f"Document missing: {path}")
-        if path.suffix.lower() not in DOC_EXTENSIONS:
-            raise ValueError(f"Unsupported document type: {path.suffix}")
+        if record.source_type == "url" and record.doc_type == "web":
+            from app.web_fetch import fetch_web_page
 
-        units = parse_document(path)
+            title, units = fetch_web_page(record.source)
+            if title:
+                record.title = title[:200]
+            record.transcript_method = "web:fetch"
+            record.doc_type = "web"
+        else:
+            path = Path(record.source)
+            if not path.exists():
+                raise FileNotFoundError(f"Document missing: {path}")
+            if path.suffix.lower() not in DOC_EXTENSIONS:
+                raise ValueError(f"Unsupported document type: {path.suffix}")
+
+            units = parse_document(path)
+            record.doc_type = path.suffix.lower().lstrip(".")
+            record.transcript_method = f"parser:{record.doc_type}"
+
         record.chunks = doc_units_to_chunks(record.id, units)
         record.unit_count = len(units)
-        record.doc_type = path.suffix.lower().lstrip(".")
-        record.transcript_method = f"parser:{record.doc_type}"
         if not record.chunks:
             raise RuntimeError("No chunks created from document")
         record.status = "ready"

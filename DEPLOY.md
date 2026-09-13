@@ -36,6 +36,6 @@ fly deploy
 
 ## 4. Notes
 
-- Single worker (`--workers 1`) — in-memory RAM cache + TF-IDF are process-local.
+- Single worker (`--workers 1`) — in-memory RAM cache + BM25 index are process-local.
 - Video URL ingest needs outbound network + yt-dlp; some hosts block YouTube.
 - Do not bake API keys into the image.

@@ -3,7 +3,7 @@
 Citation-first **Video + Document RAG** for investigation workflows.  
 Upload a file or paste a YouTube URL → indexed passages with locations → ask questions → get a grounded briefing with evidence you can jump to.
 
-**Stack:** FastAPI · Fireworks LLM · faster-whisper · TF-IDF retrieval · Docker  
+**Stack:** FastAPI · Fireworks LLM · faster-whisper · BM25 retrieval · Docker  
 
 ---
 
@@ -23,10 +23,13 @@ Most “chat with your PDF/video” tools hide the trail. Nexora is built as an 
 | Area | What you get |
 |------|----------------|
 | **Video RAG** | YouTube URL (captions first, Whisper fallback) or local video/audio upload |
-| **Document RAG** | PDF, DOCX, TXT/MD, CSV, XLSX, PPTX, JSON, XML, HTML |
+| **Document RAG** | PDF (incl. scanned OCR), DOCX, TXT/MD, CSV/TSV, XLSX, PPTX, JSON, XML, HTML, **EPUB**, **images (OCR)** |
+| **Web page** | Single URL via `/api/ingest/web` |
 | **Ask** | Scoped by mode (video/doc) or a single source |
 | **Delete** | Removes store record, upload/audio files, cache entries, retriever index |
-| **Ops** | `/api/health` (live), `/api/ready`, request IDs, latency headers, rate limit |
+| **Retrieval** | **Hybrid**: BM25 keyword + TF-IDF sparse vector + structure/graph boost → RRF rerank |
+| **Evidence** | Evidence graph + claim/conflict briefing; locations: page / cell / timestamp / region / line / URL |
+| **Ops** | `/api/health` (live), `/api/ready`, `/api/capabilities`, request IDs, rate limit |
 | **UI** | Editorial “Evidence Desk” UI — Archivo / Newsreader / IBM Plex Mono |
 
 ---
@@ -46,7 +49,7 @@ Most “chat with your PDF/video” tools hide the trail. Nexora is built as an 
         │                               │
 ┌───────▼──────────┐          ┌─────────▼──────────┐
 │  Pipeline        │          │  RAG               │
-│  ingest · parse  │          │  TF-IDF · LLM      │
+│  ingest · parse  │          │  BM25 · LLM        │
 │  whisper / ytdlp │          │  Fireworks → fallback│
 └───────┬──────────┘          └─────────┬──────────┘
         │                               │

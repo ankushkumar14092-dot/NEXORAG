@@ -10,6 +10,9 @@ from pypdf import PdfReader
 from docx import Document
 from openpyxl import load_workbook
 
+from app.ocr import IMAGE_EXTENSIONS, ocr_image, ocr_pdf_pages
+from app.modality import CODE_EXTENSIONS
+
 
 @dataclass
 class DocUnit:
@@ -29,6 +32,7 @@ DOC_EXTENSIONS = {
     ".md",
     ".markdown",
     ".csv",
+    ".tsv",
     ".xlsx",
     ".xls",
     ".json",
@@ -36,6 +40,9 @@ DOC_EXTENSIONS = {
     ".pptx",
     ".html",
     ".htm",
+    ".epub",
+    *IMAGE_EXTENSIONS,
+    *{e for e in CODE_EXTENSIONS if e != ".json"},
 }
 
 
@@ -50,8 +57,8 @@ def parse_document(path: Path) -> list[DocUnit]:
         return _parse_docx(path)
     if suffix in {".txt", ".md", ".markdown"}:
         return _parse_text(path)
-    if suffix == ".csv":
-        return _parse_csv(path)
+    if suffix in {".csv", ".tsv"}:
+        return _parse_csv(path, delimiter="\t" if suffix == ".tsv" else ",")
     if suffix in {".xlsx", ".xls"}:
         return _parse_xlsx(path)
     if suffix == ".json":
@@ -62,6 +69,12 @@ def parse_document(path: Path) -> list[DocUnit]:
         return _parse_pptx(path)
     if suffix in {".html", ".htm"}:
         return _parse_html(path)
+    if suffix == ".epub":
+        return _parse_epub(path)
+    if suffix in IMAGE_EXTENSIONS:
+        return _parse_image(path)
+    if suffix in CODE_EXTENSIONS and suffix != ".json":
+        return _parse_code(path)
     raise ValueError(f"Unsupported document type: {suffix}")
 
 
@@ -80,7 +93,23 @@ def _parse_pdf(path: Path) -> list[DocUnit]:
             loc = f"Page {i}" if len(blocks) == 1 else f"Page {i}, block {bi}"
             units.append(DocUnit(text=block, location=loc, page=i))
     if not units:
-        raise RuntimeError("PDF produced no extractable text (maybe scanned/image-only)")
+        # Scanned / image-only PDF → OCR fallback
+        ocr_pages = ocr_pdf_pages(path)
+        for page_no, text in ocr_pages:
+            blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
+            if not blocks:
+                blocks = [text]
+            for bi, block in enumerate(blocks, start=1):
+                loc = (
+                    f"Page {page_no} (OCR)"
+                    if len(blocks) == 1
+                    else f"Page {page_no} (OCR), block {bi}"
+                )
+                units.append(DocUnit(text=block, location=loc, page=page_no))
+        if not units:
+            raise RuntimeError(
+                "PDF produced no extractable text (OCR also empty — check Tesseract/poppler)"
+            )
     return units
 
 
@@ -147,10 +176,10 @@ def _parse_text(path: Path, label_prefix: str = "Section") -> list[DocUnit]:
     return units
 
 
-def _parse_csv(path: Path) -> list[DocUnit]:
+def _parse_csv(path: Path, delimiter: str = ",") -> list[DocUnit]:
     units: list[DocUnit] = []
     with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
-        reader = csv.reader(f)
+        reader = csv.reader(f, delimiter=delimiter)
         rows = list(reader)
     if not rows:
         raise RuntimeError("Empty CSV")
@@ -321,4 +350,72 @@ def _parse_html(path: Path) -> list[DocUnit]:
             buf = []
     if buf:
         units.append(DocUnit(text=" ".join(buf), location=f"HTML section {idx}"))
+    return units
+
+
+def _parse_image(path: Path) -> list[DocUnit]:
+    text = ocr_image(path)
+    if not text:
+        raise RuntimeError("OCR produced no text from image")
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
+    if not blocks:
+        blocks = [text]
+    units: list[DocUnit] = []
+    for i, block in enumerate(blocks, start=1):
+        loc = "Image (OCR)" if len(blocks) == 1 else f"Image (OCR), region {i}"
+        units.append(DocUnit(text=block, location=loc))
+    return units
+
+
+def _parse_epub(path: Path) -> list[DocUnit]:
+    from ebooklib import ITEM_DOCUMENT, epub
+
+    book = epub.read_epub(str(path))
+    units: list[DocUnit] = []
+    chapter = 0
+    for item in book.get_items_of_type(ITEM_DOCUMENT):
+        chapter += 1
+        raw = item.get_content().decode("utf-8", errors="ignore")
+        text = re.sub(r"(?is)<script.*?>.*?</script>", " ", raw)
+        text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            continue
+        if len(text) <= 1800:
+            units.append(DocUnit(text=text, location=f"Chapter {chapter}"))
+        else:
+            for j in range(0, len(text), 1500):
+                piece = text[j : j + 1500].strip()
+                if piece:
+                    units.append(
+                        DocUnit(
+                            text=piece,
+                            location=f"Chapter {chapter}, part {j // 1500 + 1}",
+                        )
+                    )
+    if not units:
+        raise RuntimeError("EPUB produced no text")
+    return units
+
+
+def _parse_code(path: Path) -> list[DocUnit]:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    if not text.strip():
+        raise RuntimeError("Empty code file")
+    lines = text.splitlines()
+    units: list[DocUnit] = []
+    window = 40
+    step = 30
+    for start in range(0, len(lines), step):
+        end = min(len(lines), start + window)
+        block = "\n".join(lines[start:end]).strip()
+        if not block:
+            continue
+        loc = f"{path.name} lines {start + 1}-{end}"
+        units.append(DocUnit(text=block, location=loc))
+        if end >= len(lines):
+            break
+    if not units:
+        raise RuntimeError("Code file produced no units")
     return units

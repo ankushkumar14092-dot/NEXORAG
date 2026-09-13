@@ -6,11 +6,13 @@ import uuid
 from collections import defaultdict, deque
 from typing import Callable
 
+import httpx
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.config import settings
+from app.metrics import metrics
 
 
 def configure_logging() -> None:
@@ -26,8 +28,19 @@ def configure_logging() -> None:
 logger = logging.getLogger("nexora")
 
 
+def maybe_alert(event: str, payload: dict) -> None:
+    url = (settings.alert_webhook_url or "").strip()
+    if not url:
+        return
+    try:
+        httpx.post(url, json={"event": event, **payload}, timeout=3.0)
+        metrics.record_alert()
+    except Exception:
+        logger.exception("alert_webhook_failed event=%s", event)
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    """Attach request id, log latency, expose X-Request-Id."""
+    """Attach request id, log latency, record metrics, alert on 5xx."""
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
@@ -37,6 +50,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             elapsed_ms = (time.perf_counter() - started) * 1000
+            metrics.record_request(request.url.path, 500, elapsed_ms)
             logger.exception(
                 "request_failed method=%s path=%s request_id=%s duration_ms=%.1f",
                 request.method,
@@ -44,10 +58,23 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 request_id,
                 elapsed_ms,
             )
+            maybe_alert(
+                "request_exception",
+                {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "request_id": request_id,
+                    "duration_ms": elapsed_ms,
+                },
+            )
             raise
         elapsed_ms = (time.perf_counter() - started) * 1000
+        metrics.record_request(request.url.path, response.status_code, elapsed_ms)
         response.headers["X-Request-Id"] = request_id
         response.headers["X-Response-Time-Ms"] = f"{elapsed_ms:.1f}"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "DENY"
         if request.url.path.startswith("/api/"):
             logger.info(
                 "request method=%s path=%s status=%s request_id=%s duration_ms=%.1f",
@@ -56,6 +83,17 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 response.status_code,
                 request_id,
                 elapsed_ms,
+            )
+        if response.status_code >= 500:
+            maybe_alert(
+                "http_5xx",
+                {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "request_id": request_id,
+                    "duration_ms": elapsed_ms,
+                },
             )
         return response
 
@@ -89,11 +127,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
-        if request.url.path in {"/api/health", "/api/ready"}:
+        if request.url.path in {"/api/health", "/api/ready", "/api/metrics"}:
             return await call_next(request)
 
         client = request.client.host if request.client else "unknown"
-        key = f"{client}:{request.url.path.split('/')[2] if len(request.url.path.split('/')) > 2 else 'api'}"
+        parts = request.url.path.split("/")
+        key = f"{client}:{parts[2] if len(parts) > 2 else 'api'}"
         if not rate_limiter.allow(key):
             return JSONResponse(
                 {"detail": "Rate limit exceeded. Retry shortly."},
