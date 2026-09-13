@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from app.config import settings
 
@@ -38,6 +39,11 @@ def extract_youtube_id(url: str) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def is_youtube_host(url: str) -> bool:
+    host = (urlparse(url).netloc or "").lower()
+    return "youtube.com" in host or "youtu.be" in host
 
 
 @dataclass

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import aiofiles
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -15,7 +15,7 @@ from app.docs_parse import DOC_EXTENSIONS
 from app.llm import llm_status
 from app.memory import query_cache
 from app.metrics import metrics
-from app.models import store
+from app.models import extract_youtube_id, is_youtube_host, store
 from app.observability import (
     RateLimitMiddleware,
     RequestContextMiddleware,
@@ -232,6 +232,11 @@ async def ingest_url(
     url = body.url.strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "URL must start with http:// or https://")
+    if is_youtube_host(url) and not extract_youtube_id(url):
+        raise HTTPException(
+            400,
+            "Invalid or incomplete YouTube video id (expected 11 characters)",
+        )
     record = create_url_record(url)
     background_tasks.add_task(process_video, record.id)
     return {"video": record.public_dict(), "source": record.public_dict()}
@@ -299,16 +304,22 @@ async def ingest_document(
 async def ingest_auto(
     background_tasks: BackgroundTasks,
     file: UploadFile | None = File(None),
-    url: str | None = None,
+    url: str | None = Form(None),
 ) -> dict:
     """Anything ingest: detect modality → route to video/doc/web pipeline."""
     if url and url.strip():
-        decision = detect_url(url.strip())
+        clean = url.strip()
+        decision = detect_url(clean)
         if decision.pipeline == "video":
-            record = create_url_record(url.strip())
+            if is_youtube_host(clean) and not extract_youtube_id(clean):
+                raise HTTPException(
+                    400,
+                    "Invalid or incomplete YouTube video id (expected 11 characters)",
+                )
+            record = create_url_record(clean)
             background_tasks.add_task(process_video, record.id)
         else:
-            record = create_web_record(url.strip())
+            record = create_web_record(clean)
             background_tasks.add_task(process_document, record.id)
         return {
             "route": decision.__dict__,

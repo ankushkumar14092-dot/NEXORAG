@@ -57,3 +57,22 @@ def test_api_key_verify(monkeypatch):
     assert not verify_api_key("wrong")
     monkeypatch.setattr(settings, "api_key", "")
     assert verify_api_key("")  # open mode
+
+
+def test_youtube_id_helpers():
+    from app.models import extract_youtube_id, is_youtube_host
+
+    assert is_youtube_host("https://www.youtube.com/watch?v=INVALID")
+    assert extract_youtube_id("https://www.youtube.com/watch?v=INVALID") is None
+    assert extract_youtube_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+
+
+def test_hybrid_no_floor_fallback_for_scoped_miss():
+    from app.hybrid import hybrid_retriever
+
+    hits = hybrid_retriever.search(
+        "zzzzmiss999xyz totally unrelated",
+        source_id="doc_does_not_exist_zzzz",
+        top_k=3,
+    )
+    assert hits == []

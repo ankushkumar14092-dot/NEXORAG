@@ -14,7 +14,7 @@ from app.ingest import (
     resolve_title_from_url,
     transcribe_audio,
 )
-from app.models import SourceRecord, extract_youtube_id, new_id, store, utc_now
+from app.models import SourceRecord, extract_youtube_id, is_youtube_host, new_id, store, utc_now
 from app.rag import retriever
 
 def create_upload_record(filename: str, saved_path: Path) -> SourceRecord:
@@ -148,7 +148,14 @@ def _process_url(record: SourceRecord) -> None:
     duration = None
     method = None
 
-    if extract_youtube_id(url):
+    yt_id = extract_youtube_id(url)
+
+    if is_youtube_host(url) and not yt_id:
+        raise ValueError(
+            "Invalid or incomplete YouTube video id (expected 11 characters)"
+        )
+
+    if yt_id:
         try:
             _, segments, duration = fetch_youtube_captions(url)
             method = "youtube_captions"

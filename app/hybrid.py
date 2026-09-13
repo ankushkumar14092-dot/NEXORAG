@@ -168,22 +168,8 @@ class HybridRetriever:
                 )
             )
 
-        if source_id and not hits:
-            scoped = [
-                (i, c)
-                for i, c in enumerate(self.base.chunks)
-                if (c.source_id or c.video_id) == source_id
-            ][:top_k]
-            for i, c in scoped:
-                hits.append(
-                    RankedHit(
-                        chunk=c,
-                        score=0.01,
-                        source_title=self.base.titles.get(c.source_id or c.video_id, c.source_id),
-                        channels={"keyword": 0.01},
-                        location_type=location_type_for_chunk(c.location_label, c.kind),
-                    )
-                )
+        # No lexical/vector match for a scoped source → empty evidence
+        # (do not invent floor-score chunks; that forced useless LLM calls).
         return hits
 
 

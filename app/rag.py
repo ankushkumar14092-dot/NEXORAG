@@ -123,23 +123,7 @@ class Retriever:
             if len(hits) >= top_k:
                 break
 
-        if source_id and (not hits or all(h.score <= 0 for h in hits)):
-            scoped = [
-                c for c in self.chunks if (c.source_id or c.video_id) == source_id
-            ][:top_k]
-            hits = [
-                Hit(
-                    chunk=c,
-                    score=0.01,
-                    source_title=self.titles.get(c.source_id or c.video_id, c.source_id),
-                )
-                for c in scoped
-            ]
-        elif hits and all(h.score <= 0 for h in hits):
-            hits = hits[: min(3, len(hits))]
-            for h in hits:
-                h.score = 0.01
-
+        # Drop non-positive scores; do not fabricate floor matches for a source.
         return [h for h in hits if h.score > 0]
 
 

@@ -5,6 +5,8 @@ Upload a file or paste a YouTube URL → indexed passages with locations → ask
 
 **Stack:** FastAPI · Fireworks LLM · faster-whisper · BM25 retrieval · Docker  
 
+**Full guide:** see **[DOCUMENTATION.md](./DOCUMENTATION.md)** (setup, every feature, API, config, ops, troubleshooting).
+
 ---
 
 ## Why this exists
