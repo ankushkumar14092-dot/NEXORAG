@@ -155,14 +155,25 @@ def _process_url(record: SourceRecord) -> None:
             "Invalid or incomplete YouTube video id (expected 11 characters)"
         )
 
+    caption_error: Exception | None = None
     if yt_id:
         try:
             _, segments, duration = fetch_youtube_captions(url)
             method = "youtube_captions"
-        except Exception:
+        except Exception as exc:
+            caption_error = exc
             segments = []
 
     if not segments:
+        # Render/cloud IPs are routinely bot-blocked by YouTube for yt-dlp downloads.
+        if yt_id and not settings.youtube_download_fallback:
+            detail = str(caption_error) if caption_error else "no caption tracks"
+            raise RuntimeError(
+                "YouTube captions could not be fetched "
+                f"({detail}). Cloud servers cannot reliably download YouTube audio "
+                "(bot check). Use a video that has captions/CC, upload the file, "
+                "or set YOUTUBE_DOWNLOAD_FALLBACK=true with cookies for local/dev."
+            )
         audio_dir = settings.data_dir / "audio" / record.id
         audio_path, _ = download_audio_from_url(url, audio_dir)
         segments, duration = transcribe_audio(audio_path)

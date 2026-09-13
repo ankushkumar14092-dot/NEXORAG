@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""  # optional POST JSON on 5xx
     # Comma-separated browser origins for Vercel/frontend ("*" = allow all)
     cors_origins: str = "*"
+    # Cloud hosts (Render) are often bot-blocked by YouTube — captions-only by default
+    youtube_download_fallback: bool = False
 
 
 settings = Settings()

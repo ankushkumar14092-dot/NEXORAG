@@ -36,19 +36,46 @@ def fetch_youtube_captions(url: str) -> tuple[str, list[Segment], float | None]:
         raise ValueError("Not a valid YouTube URL")
 
     api = YouTubeTranscriptApi()
+    fetched = None
+    last_err: Exception | None = None
+
+    # Prefer explicit languages, then any listed track (incl. auto-generated).
     try:
-        transcript = api.fetch(video_id, languages=["en", "hi", "en-US", "en-GB"])
-    except (NoTranscriptFound, TranscriptsDisabled, VideoUnavailable) as exc:
-        raise RuntimeError(f"YouTube captions unavailable: {exc}") from exc
+        fetched = api.fetch(video_id, languages=["en", "hi", "en-US", "en-GB", "en-IN"])
+    except Exception as exc:
+        last_err = exc
+        try:
+            listing = api.list(video_id)
+            # Manual tracks first, then generated
+            ordered = sorted(
+                list(listing),
+                key=lambda t: (getattr(t, "is_generated", True), getattr(t, "language_code", "")),
+            )
+            for track in ordered:
+                try:
+                    fetched = track.fetch()
+                    break
+                except Exception as track_err:
+                    last_err = track_err
+        except Exception as list_err:
+            last_err = list_err
+
+    if fetched is None:
+        raise RuntimeError(
+            f"YouTube captions unavailable: {last_err or 'no transcript tracks'}"
+        ) from last_err
 
     segments: list[Segment] = []
-    for item in transcript:
+    for item in fetched:
         text = str(item.text).replace("\n", " ").strip()
         if not text:
             continue
         start = float(item.start)
         end = start + float(item.duration)
         segments.append(Segment(start=start, end=end, text=text))
+
+    if not segments:
+        raise RuntimeError("YouTube captions returned empty transcript")
 
     duration_val = segments[-1].end if segments else None
     return video_id, segments, duration_val
@@ -123,9 +150,28 @@ def transcribe_audio(audio_path: Path) -> tuple[list[Segment], float | None]:
 
 
 def resolve_title_from_url(url: str) -> str:
+    """Best-effort title without requiring yt-dlp (cloud YouTube often blocks it)."""
+    vid = extract_youtube_id(url)
+    if vid:
+        try:
+            import httpx
+
+            r = httpx.get(
+                "https://www.youtube.com/oembed",
+                params={"url": f"https://www.youtube.com/watch?v={vid}", "format": "json"},
+                timeout=10.0,
+                follow_redirects=True,
+            )
+            if r.status_code == 200:
+                title = (r.json() or {}).get("title")
+                if title:
+                    return str(title).strip()
+        except Exception:
+            pass
+        return vid
+
     cmd = ["yt-dlp", "--get-title", "--no-playlist", url]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip().splitlines()[0]
-    vid = extract_youtube_id(url)
-    return vid or url
+    return url

@@ -17,6 +17,10 @@ services:
         value: "200"
       - key: RATE_LIMIT_PER_MINUTE
         value: "60"
+      - key: YOUTUBE_DOWNLOAD_FALLBACK
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "*"
     disk:
       name: nexora-data
       mountPath: /app/data
