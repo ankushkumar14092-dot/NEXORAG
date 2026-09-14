@@ -87,3 +87,5 @@ def test_query_middle_last_uses_latter_half(tmp_path, monkeypatch):
     assert starts, "expected evidence"
     assert min(starts) >= 400.0, starts
     assert all(s >= 400.0 for s in starts)
+    # Should cover latter-half span, not only absolute ending clips.
+    assert max(starts) - min(starts) >= 100.0, starts

@@ -217,8 +217,38 @@ class QueryService:
                 ]
                 if not in_region:
                     in_region = ordered
-                if region in {"end", "middle_end"}:
+                if region == "end":
                     picked = in_region[-k:]
+                elif region == "middle_end":
+                    # Spread across latter half (not only absolute ending clips).
+                    if len(in_region) <= k:
+                        picked = in_region
+                    else:
+                        n = len(in_region)
+                        idxs = sorted(
+                            {
+                                0,
+                                max(0, n // 4),
+                                max(0, n // 2),
+                                max(0, (3 * n) // 4),
+                                n - 1,
+                            }
+                        )
+                        picked = []
+                        for i in idxs:
+                            if in_region[i] not in picked:
+                                picked.append(in_region[i])
+                            if len(picked) >= k:
+                                break
+                        for c in in_region:
+                            if len(picked) >= k:
+                                break
+                            if c not in picked:
+                                picked.append(c)
+                        picked = sorted(
+                            picked[:k],
+                            key=lambda c: (c.start is None, c.start or 0.0, c.id),
+                        )
                 elif region == "middle":
                     if len(in_region) <= k:
                         picked = in_region
