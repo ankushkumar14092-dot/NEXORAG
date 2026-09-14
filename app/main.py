@@ -36,6 +36,8 @@ from app.pipeline import (
 from app.recovery import backup_store, list_backups, restore_store
 from app.security import SecurityError, sanitize_filename
 from app.services import build_upload_path, query_service, source_service
+from app.desk_snapshot import export_desk_snapshot, import_desk_snapshot
+from app.storage_status import storage_status
 from app.youtube_auth import youtube_auth_status
 
 configure_logging()
@@ -90,6 +92,12 @@ class YoutubeCookiesInstallRequest(BaseModel):
     setup_key: str = Field(..., min_length=8, max_length=200)
 
 
+class DeskSnapshotImportRequest(BaseModel):
+    snapshot: dict = Field(...)
+    replace: bool = True
+    setup_key: str = Field(default="", max_length=200)
+
+
 class CaptionSegIn(BaseModel):
     start: float = Field(..., ge=0)
     end: float = Field(..., ge=0)
@@ -142,6 +150,11 @@ async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/config.js")
+async def config_js() -> FileResponse:
+    return FileResponse(STATIC_DIR / "config.js", media_type="application/javascript")
+
+
 @app.get("/api/health")
 async def health() -> dict:
     """Liveness: process is up."""
@@ -160,6 +173,7 @@ async def health() -> dict:
         "ram_cache": query_cache.stats(),
         "supported_docs": sorted(DOC_EXTENSIONS),
         "youtube": youtube_auth_status(),
+        "storage": storage_status(),
     }
 
 
@@ -190,6 +204,7 @@ async def ready() -> dict:
             "data_dir": str(settings.data_dir),
             "backups_dir": str(backup_dir),
             "auth_required": api_key_configured(),
+            "storage": storage_status(),
         }
     except Exception as exc:
         logger.exception("readiness_failed")
@@ -476,6 +491,27 @@ async def admin_restore(body: RestoreRequest) -> dict:
     try:
         return restore_store(body.backup_path)
     except Exception as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@app.get("/api/export/desk")
+async def export_desk(include_segments: bool = False) -> dict:
+    """Browser-friendly snapshot for surviving ephemeral Render disks."""
+    return export_desk_snapshot(include_segments=include_segments)
+
+
+@app.post("/api/import/desk")
+async def import_desk(body: DeskSnapshotImportRequest) -> dict:
+    """Restore sources/chunks from a previously exported snapshot."""
+    expected = (settings.fireworks_api_key or "").strip()
+    # If Fireworks key is configured, require it as setup_key to avoid public overwrite.
+    if expected and body.setup_key.strip() != expected:
+        # Allow unauthenticated import only when desk is empty (first boot recovery).
+        if store.list():
+            raise HTTPException(401, "setup_key required to replace a non-empty desk")
+    try:
+        return import_desk_snapshot(body.snapshot, replace=body.replace)
+    except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
 
 

@@ -9,8 +9,16 @@ services:
         sync: false
       - key: FIREWORKS_MODEL
         value: accounts/fireworks/models/deepseek-v4-pro-0813
+      - key: FIREWORKS_FAST_MODEL
+        value: accounts/fireworks/models/deepseek-v4p1-flash
+      - key: PREFER_FAST_MODEL
+        value: "true"
+      - key: ANSWER_MAX_TOKENS
+        value: "500"
       - key: FIREWORKS_BASE_URL
         value: https://api.fireworks.ai/inference/v1
+      - key: DATA_DIR
+        value: /app/data
       - key: WHISPER_MODEL
         value: base
       - key: MAX_UPLOAD_MB
@@ -20,13 +28,16 @@ services:
       - key: YOUTUBE_DOWNLOAD_FALLBACK
         value: "false"
       - key: YOUTUBE_CAPTION_PROXY
-        value: "https://nexora-evidence.vercel.app/api/yt-captions"
+        value: https://nexora-evidence.vercel.app/api/yt-captions
       - key: YOUTUBE_COOKIES
         sync: false
       - key: YOUTUBE_HTTP_PROXY
         sync: false
       - key: CORS_ORIGINS
         value: "*"
+      # Set true in dashboard after attaching a disk at /app/data
+      - key: NEXORA_PERSISTENT_STORAGE
+        value: "false"
     disk:
       name: nexora-data
       mountPath: /app/data

@@ -156,12 +156,14 @@ def answer_with_context(question: str, hits: list[Hit]) -> str:
         return no_evidence_reply(question)
 
     context_blocks = []
-    for i, hit in enumerate(hits, start=1):
+    for i, hit in enumerate(hits[:6], start=1):
         c = hit.chunk
         loc = c.location_label or f"{c.start_label}-{c.end_label}"
         kind = c.kind or "source"
+        # Cap passage size — long ASR dumps caused cloud 502/OOM on deepseek-pro.
+        text = (c.text or "")[:900]
         context_blocks.append(
-            f"[{i}] ({hit.source_title}) [{kind}] {loc}\n{c.text}"
+            f"[{i}] ({hit.source_title}) [{kind}] {loc}\n{text}"
         )
     context = "\n\n".join(context_blocks)
 

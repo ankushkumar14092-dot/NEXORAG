@@ -655,6 +655,7 @@
           </div>
 
           <p class="note" id="ingestMsg">Ready.</p>
+          <p class="note" id="opsMsg"></p>
           </div>
 
           <div class="zone zone-split">
@@ -707,6 +708,7 @@
     let pollTimer = null;
     let lastReportText = "";
     let lastQuestion = "";
+    let restoreAttempted = false;
 
     // Empty = same origin (Render monolith). Vercel sets window.NEXORA_API_BASE.
     const API_BASE = (window.NEXORA_API_BASE || "").replace(/\/$/, "");
@@ -781,7 +783,66 @@
     }
 
     async function bootYoutubeHint() {
-      /* no permanent banner — Process path handles cloud fallbacks */
+      await bootOpsStatus();
+    }
+
+    const DESK_SNAP_KEY = "nexora_desk_snapshot_v1";
+
+    async function bootOpsStatus() {
+      const ops = document.getElementById("opsMsg");
+      if (!ops) return;
+      const bits = [];
+      try {
+        const health = await apiFetch("/api/health").then((r) => r.json());
+        const storage = health.storage || {};
+        if (storage.persistent === false) {
+          bits.push("Storage: ephemeral (Render disk missing — index can wipe on redeploy; browser mirror on)");
+        } else if (storage.persistent === true) {
+          bits.push("Storage: persistent");
+        }
+        const yt = health.youtube || {};
+        if (yt.cloud_youtube_ready) bits.push("YouTube cloud: ready");
+        else bits.push("YouTube cloud: needs local :8000 or cookies");
+      } catch (e) {
+        bits.push("API unreachable");
+      }
+      try {
+        const local = await fetch("http://127.0.0.1:8000/api/health", { mode: "cors" });
+        bits.push(local.ok ? "Local bridge: on" : "Local bridge: down");
+      } catch (e) {
+        bits.push("Local bridge: down");
+      }
+      ops.textContent = bits.join(" · ");
+      ops.classList.toggle("bad", bits.some((b) => b.includes("ephemeral") || b.includes("unreachable")));
+    }
+
+    async function mirrorDeskToBrowser() {
+      try {
+        const snap = await apiFetch("/api/export/desk").then((r) => r.json());
+        if (!snap || !snap.source_count) return;
+        const raw = JSON.stringify(snap);
+        if (raw.length > 4_500_000) return; // localStorage safety
+        localStorage.setItem(DESK_SNAP_KEY, raw);
+      } catch (e) {}
+    }
+
+    async function maybeRestoreDeskFromBrowser() {
+      try {
+        const raw = localStorage.getItem(DESK_SNAP_KEY);
+        if (!raw) return false;
+        const snap = JSON.parse(raw);
+        if (!snap || !Array.isArray(snap.sources) || !snap.sources.length) return false;
+        const res = await apiFetch("/api/import/desk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ snapshot: snap, replace: true, setup_key: "" }),
+        });
+        if (!res.ok) return false;
+        setMsg("ingestMsg", `Restored ${snap.source_count} source(s) from browser mirror`);
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
 
     async function ingestUrl() {
@@ -954,6 +1015,18 @@
       const busy = data.sources.some(v => v.status === "queued" || v.status === "processing");
       if (busy) startPolling();
       else stopPolling();
+
+      const readyCount = data.sources.filter((v) => v.status === "ready").length;
+      if (readyCount > 0) {
+        mirrorDeskToBrowser();
+      } else if (!busy && !restoreAttempted) {
+        restoreAttempted = true;
+        const restored = await maybeRestoreDeskFromBrowser();
+        if (restored) {
+          restoreAttempted = false;
+          await refreshSources();
+        }
+      }
     }
 
     async function ask() {
@@ -1130,6 +1203,7 @@
       pollTimer = null;
     }
 
+    bootOpsStatus();
     refreshSources();
   </script>
 </body>

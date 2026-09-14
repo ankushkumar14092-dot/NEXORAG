@@ -22,6 +22,16 @@ Required env (in `.env` or host secrets):
 3. Set secret `FIREWORKS_API_KEY` in the dashboard.
 4. Use a plan with **disk** (Blueprint mounts `/app/data`). **Without disk, uploads vanish on every deploy.**
 
+If your live service was created outside Blueprint (e.g. named `nexorag`), open Render → Disks → add disk mounted at `/app/data`, then set env:
+
+```text
+DATA_DIR=/app/data
+NEXORA_PERSISTENT_STORAGE=true
+PREFER_FAST_MODEL=true
+```
+
+The UI also mirrors the desk snapshot into browser `localStorage` and auto-restores after an empty redeploy.
+
 Whisper + uploads need RAM/disk — free tiers often OOM. Prefer **Starter** or higher.
 
 ### YouTube on Render (required for URL ingest)
