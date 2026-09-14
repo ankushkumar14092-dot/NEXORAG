@@ -100,7 +100,7 @@ class HybridRetriever:
         bm25_order = [
             i
             for i in sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)
-            if allowed_idx(i) and bm25_scores[i] > 0
+            if allowed_idx(i) and bm25_scores[i] >= 0.15
         ][: max(40, top_k * 5)]
 
         # --- sparse vector channel (TF-IDF cosine) ---
@@ -112,7 +112,7 @@ class HybridRetriever:
             vec_order = [
                 i
                 for i in sorted(range(len(vec_scores)), key=lambda i: vec_scores[i], reverse=True)
-                if allowed_idx(i) and vec_scores[i] > 0
+                if allowed_idx(i) and vec_scores[i] >= 0.04
             ][: max(40, top_k * 5)]
 
         # --- graph / structure channel: title + location token overlap ---

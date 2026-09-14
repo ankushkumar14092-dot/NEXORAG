@@ -134,14 +134,34 @@ def ensure_youtube_cookie_file() -> Path | None:
     return out
 
 
+def _cookies_look_authenticated(path: Path | None) -> bool:
+    """Visitor-only cookies still get 403 on cloud IPs; need a real session."""
+    if not path or not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    markers = (
+        "\tSID\t",
+        "\tLOGIN_INFO\t",
+        "\tSAPISID\t",
+        "\t__Secure-1PSID\t",
+        "\t__Secure-3PSID\t",
+        "\tSSID\t",
+    )
+    return any(m in text for m in markers)
+
+
 def youtube_auth_status() -> dict:
-    cookies = bool(ensure_youtube_cookie_file())
+    path = ensure_youtube_cookie_file()
+    cookies = bool(path)
+    authed = _cookies_look_authenticated(path)
     proxy = bool(youtube_proxy_url())
     return {
         "cookies_configured": cookies,
+        "cookies_authenticated": authed,
         "proxy_configured": proxy,
-        "cloud_youtube_ready": cookies or proxy,
-        "download_fallback": bool(settings.youtube_download_fallback) or cookies,
+        # Ready only when proxy or real logged-in session cookies exist.
+        "cloud_youtube_ready": proxy or authed,
+        "download_fallback": bool(settings.youtube_download_fallback) or authed,
     }
 
 

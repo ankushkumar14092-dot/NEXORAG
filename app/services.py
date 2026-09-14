@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import threading
 import time
 from pathlib import Path
@@ -11,9 +12,16 @@ from app.language import detect_locale, search_query_variants
 from app.memory import TempRAMCache, query_cache
 from app.metrics import metrics
 from app.models import SourceRecord, store
+from app.modality import location_type_for_chunk
 from app.query_fast import correct_query_typos
 from app.rag import answer_with_context, retriever
 from app.security import safe_rmtree, safe_unlink, sanitize_filename, validate_source_id
+
+_SUMMARY_RE = re.compile(
+    r"(?i)\b(summarize|summary|overview|tl;?dr|main\s+points?|key\s+takeaways?|"
+    r"what('?s|\s+is)?\s+(this|the)?\s*(video|doc|document|page)?\s*(about)?|"
+    r"is\s+(video|ismein|isme)\s+mein\s+kya|kya\s+bataya|samjha\s*o?|khulasa)\b"
+)
 
 class SourceService:
     """Application service for source lifecycle (list/get/delete)."""
@@ -73,7 +81,7 @@ class QueryService:
     ) -> dict:
         cache_key = TempRAMCache.make_key(
             "q",
-            "ml2",
+            "ml3",
             store.revision,
             question.strip().lower(),
             source_id or "",
@@ -110,11 +118,40 @@ class QueryService:
                 : (top_k or settings.top_k)
             ]
 
+        def _chronological_source_hits() -> list[RankedHit]:
+            if not source_id:
+                return []
+            record = store.get(source_id)
+            if not record or record.status != "ready" or not record.chunks:
+                return []
+            ordered = sorted(
+                record.chunks,
+                key=lambda c: (c.start is None, c.start or 0.0, c.id),
+            )
+            out: list[RankedHit] = []
+            for chunk in ordered[: (top_k or settings.top_k)]:
+                loc = chunk.location_label or f"{chunk.start_label}-{chunk.end_label}"
+                out.append(
+                    RankedHit(
+                        chunk=chunk,
+                        score=1.0,
+                        source_title=record.title,
+                        channels={"keyword": 0.0, "vector": 0.0, "graph": 0.0, "rrf": 1.0, "rerank": 1.0},
+                        location_type=location_type_for_chunk(loc, chunk.kind),
+                    )
+                )
+            return out
+
         hits = _search_all(variants)
         # Lazy LLM expansion only on miss (Hinglish/Hindi/cross-lingual)
         if not hits and detect_locale(corrected) != "english":
             variants = search_query_variants(corrected, allow_llm=True)
             hits = _search_all(variants)
+
+        # Generic "summarize" questions should use early/chronological evidence,
+        # not random mid-video English keyword hits.
+        if source_id and _SUMMARY_RE.search(corrected):
+            hits = _chronological_source_hits() or hits
 
         answer = answer_with_context(question, hits)
         evidence = [

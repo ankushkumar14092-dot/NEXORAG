@@ -165,17 +165,18 @@ def _process_url(record: SourceRecord) -> None:
             segments = []
 
     if not segments:
-        # Render/cloud IPs are bot-blocked unless cookies or residential proxy are set.
-        from app.youtube_auth import ensure_youtube_cookie_file, youtube_proxy_url
+        # Render/cloud IPs are bot-blocked unless session cookies or residential proxy are set.
+        from app.youtube_auth import youtube_auth_status
 
+        yt_status = youtube_auth_status()
         allow_download = bool(settings.youtube_download_fallback) or bool(
-            ensure_youtube_cookie_file() or youtube_proxy_url()
+            yt_status.get("cloud_youtube_ready")
         )
         if yt_id and not allow_download:
             _ = caption_error
             raise RuntimeError(
                 "YouTube blocked this cloud server (HTTP 403). "
-                "Fix: set YOUTUBE_COOKIES on Render (browser cookies.txt), "
+                "Fix: push logged-in YOUTUBE_COOKIES (scripts/push_youtube_cookies.py), "
                 "or upload the video file, "
                 "or run locally: python scripts/ingest_youtube_remote.py <URL>"
             )

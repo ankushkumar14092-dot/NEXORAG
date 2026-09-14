@@ -812,16 +812,12 @@
           return;
         }
 
-        try {
-          const health = await apiFetch("/api/health").then((r) => r.json());
-          if (health?.youtube && health.youtube.cloud_youtube_ready === false) {
-            return setMsg(
-              "ingestMsg",
-              "Could not fetch captions. Start local server (localhost:8000) and retry, or upload MP4.",
-              true
-            );
-          }
-        } catch (e) {}
+        // Never queue a doomed YouTube URL job on cloud IPs.
+        return setMsg(
+          "ingestMsg",
+          "YouTube captions unavailable from cloud. Keep local server on :8000 and retry, upload MP4, or push logged-in cookies (scripts/push_youtube_cookies.py).",
+          true
+        );
       }
 
       setMsg("ingestMsg", "Queuing URL…");
