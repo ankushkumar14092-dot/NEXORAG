@@ -22,6 +22,49 @@ _SUMMARY_RE = re.compile(
     r"what('?s|\s+is)?\s+(this|the)?\s*(video|doc|document|page)?\s*(about)?|"
     r"is\s+(video|ismein|isme)\s+mein\s+kya|kya\s+bataya|samjha\s*o?|khulasa)\b"
 )
+_REGION_END_RE = re.compile(
+    r"(?i)\b(end|ending|last|finale|conclusion|closing|akhir|aakhir|ant|"
+    r"last\s+part|second\s+half|baad\s*(mein|me)?|end\s*(mein|me)?|"
+    r"towards?\s+the\s+end|near\s+the\s+end)\b"
+)
+_REGION_MID_RE = re.compile(
+    r"(?i)\b(middle|mid(?:dle)?|halfway|midway|beech|beech\s*(mein|me)?|"
+    r"center|centre|mid\s*section)\b"
+)
+_REGION_START_RE = re.compile(
+    r"(?i)\b(start|beginning|opening|intro|shuru|pehle|first\s+part|"
+    r"shuruaat|beginning\s+mein)\b"
+)
+
+
+def _detect_time_region(question: str) -> str | None:
+    """Return start|middle|end when the user asks about a video section."""
+    q = question or ""
+    # Prefer more specific end/middle over start when both appear ("middle last").
+    if _REGION_END_RE.search(q) and _REGION_MID_RE.search(q):
+        return "middle_end"
+    if _REGION_END_RE.search(q):
+        return "end"
+    if _REGION_MID_RE.search(q):
+        return "middle"
+    if _REGION_START_RE.search(q):
+        return "start"
+    return None
+
+
+def _chunk_in_region(start: float | None, duration: float | None, region: str) -> bool:
+    if start is None or duration is None or duration <= 0:
+        return True
+    t = float(start) / float(duration)
+    if region == "start":
+        return t < 0.28
+    if region == "middle":
+        return 0.28 <= t < 0.72
+    if region == "end":
+        return t >= 0.55
+    if region == "middle_end":
+        return t >= 0.40
+    return True
 
 class SourceService:
     """Application service for source lifecycle (list/get/delete)."""
@@ -81,7 +124,7 @@ class QueryService:
     ) -> dict:
         cache_key = TempRAMCache.make_key(
             "q",
-            "ml3",
+            "ml4",
             store.revision,
             question.strip().lower(),
             source_id or "",
@@ -118,7 +161,28 @@ class QueryService:
                 : (top_k or settings.top_k)
             ]
 
-        def _chronological_source_hits() -> list[RankedHit]:
+        def _hits_from_chunks(record: SourceRecord, chunks: list) -> list[RankedHit]:
+            out: list[RankedHit] = []
+            for chunk in chunks:
+                loc = chunk.location_label or f"{chunk.start_label}-{chunk.end_label}"
+                out.append(
+                    RankedHit(
+                        chunk=chunk,
+                        score=1.0,
+                        source_title=record.title,
+                        channels={
+                            "keyword": 0.0,
+                            "vector": 0.0,
+                            "graph": 0.0,
+                            "rrf": 1.0,
+                            "rerank": 1.0,
+                        },
+                        location_type=location_type_for_chunk(loc, chunk.kind),
+                    )
+                )
+            return out
+
+        def _section_source_hits(region: str | None) -> list[RankedHit]:
             if not source_id:
                 return []
             record = store.get(source_id)
@@ -128,19 +192,61 @@ class QueryService:
                 record.chunks,
                 key=lambda c: (c.start is None, c.start or 0.0, c.id),
             )
-            out: list[RankedHit] = []
-            for chunk in ordered[: (top_k or settings.top_k)]:
-                loc = chunk.location_label or f"{chunk.start_label}-{chunk.end_label}"
-                out.append(
-                    RankedHit(
-                        chunk=chunk,
-                        score=1.0,
-                        source_title=record.title,
-                        channels={"keyword": 0.0, "vector": 0.0, "graph": 0.0, "rrf": 1.0, "rerank": 1.0},
-                        location_type=location_type_for_chunk(loc, chunk.kind),
-                    )
-                )
-            return out
+            k = top_k or settings.top_k
+            duration = record.duration
+            if duration is None:
+                ends = [c.end for c in ordered if c.end is not None]
+                duration = max(ends) if ends else None
+
+            if region in {"start", "middle", "end", "middle_end"}:
+                in_region = [
+                    c
+                    for c in ordered
+                    if _chunk_in_region(c.start, duration, region)
+                ]
+                if not in_region:
+                    in_region = ordered
+                if region in {"end", "middle_end"}:
+                    picked = in_region[-k:]
+                elif region == "middle":
+                    if len(in_region) <= k:
+                        picked = in_region
+                    else:
+                        mid = len(in_region) // 2
+                        half = max(1, k // 2)
+                        lo = max(0, mid - half)
+                        picked = in_region[lo : lo + k]
+                else:
+                    picked = in_region[:k]
+                return _hits_from_chunks(record, picked)
+
+            # Whole-video summarize: spread start + middle + end (not only 00:00).
+            if len(ordered) <= k:
+                return _hits_from_chunks(record, ordered)
+            picks = []
+            n = len(ordered)
+            idxs = sorted(
+                {
+                    0,
+                    max(0, n // 4),
+                    max(0, n // 2),
+                    max(0, (3 * n) // 4),
+                    n - 1,
+                }
+            )
+            for i in idxs:
+                if ordered[i] not in picks:
+                    picks.append(ordered[i])
+                if len(picks) >= k:
+                    break
+            # fill gaps chronologically if still short
+            for c in ordered:
+                if len(picks) >= k:
+                    break
+                if c not in picks:
+                    picks.append(c)
+            picks.sort(key=lambda c: (c.start is None, c.start or 0.0, c.id))
+            return _hits_from_chunks(record, picks[:k])
 
         hits = _search_all(variants)
         # Lazy LLM expansion only on miss (Hinglish/Hindi/cross-lingual)
@@ -148,10 +254,26 @@ class QueryService:
             variants = search_query_variants(corrected, allow_llm=True)
             hits = _search_all(variants)
 
-        # Generic "summarize" questions should use early/chronological evidence,
-        # not random mid-video English keyword hits.
-        if source_id and _SUMMARY_RE.search(corrected):
-            hits = _chronological_source_hits() or hits
+        region = _detect_time_region(corrected)
+        is_summary = bool(_SUMMARY_RE.search(corrected))
+
+        # If user asks about middle/last, keep only evidence from that section.
+        if source_id and region:
+            record = store.get(source_id)
+            duration = record.duration if record else None
+            if duration is None and record and record.chunks:
+                ends = [c.end for c in record.chunks if c.end is not None]
+                duration = max(ends) if ends else None
+            regional = [
+                h
+                for h in hits
+                if _chunk_in_region(h.chunk.start, duration, region)
+            ]
+            hits = regional or _section_source_hits(region)
+
+        # Generic summarize with no section hint: spread across the video.
+        elif source_id and is_summary:
+            hits = _section_source_hits(None) or hits
 
         answer = answer_with_context(question, hits)
         evidence = [
