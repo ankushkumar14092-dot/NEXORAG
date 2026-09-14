@@ -36,6 +36,7 @@ from app.pipeline import (
 from app.recovery import backup_store, list_backups, restore_store
 from app.security import SecurityError, sanitize_filename
 from app.services import build_upload_path, query_service, source_service
+from app.youtube_auth import youtube_auth_status
 
 configure_logging()
 
@@ -153,6 +154,7 @@ async def health() -> dict:
         "store_revision": store.revision,
         "ram_cache": query_cache.stats(),
         "supported_docs": sorted(DOC_EXTENSIONS),
+        "youtube": youtube_auth_status(),
     }
 
 

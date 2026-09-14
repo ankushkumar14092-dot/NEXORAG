@@ -622,6 +622,7 @@
             </div>
             <div class="row-btns">
               <button class="fill" onclick="ingestUrl()">Process</button>
+            <p class="note">Cloud tip: YouTube URL needs YOUTUBE_COOKIES on Render, or upload the file.</p>
               <button onclick="refreshSources()">Refresh</button>
             </div>
             <div class="field" style="margin-top:14px">
@@ -741,6 +742,20 @@
       return m ? m[1] : null;
     }
 
+    async function bootYoutubeHint() {
+      try {
+        const res = await apiFetch('/api/health');
+        const data = await res.json();
+        const yt = data.youtube || {};
+        if (yt.cloud_youtube_ready === false) {
+          const el = document.getElementById('ingestMsg');
+          if (el && mode === 'video') {
+            setMsg('ingestMsg', 'YouTube cloud block: set YOUTUBE_COOKIES on Render, or upload MP4.');
+          }
+        }
+      } catch (e) {}
+    }
+
     async function ingestUrl() {
       const url = document.getElementById("url").value.trim();
       if (!url) return alert("Paste a URL");
@@ -774,6 +789,18 @@
         } catch (err) {
           // fall through to Render URL ingest
         }
+
+        // Avoid queuing a doomed job when Render has no cookies/proxy yet.
+        try {
+          const health = await apiFetch("/api/health").then((r) => r.json());
+          if (health?.youtube && health.youtube.cloud_youtube_ready === false) {
+            return setMsg(
+              "ingestMsg",
+              "YouTube blocks Render IPs. Set YOUTUBE_COOKIES on Render (see DEPLOY.md), or upload the MP4.",
+              true
+            );
+          }
+        } catch (e) {}
       }
 
       setMsg("ingestMsg", "Queuing URL…");

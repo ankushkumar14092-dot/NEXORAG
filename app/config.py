@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     youtube_download_fallback: bool = False
     # Optional caption proxy (Vercel serverless) used when Render IP gets YouTube 403
     youtube_caption_proxy: str = "https://nexora-evidence.vercel.app/api/yt-captions"
+    # Netscape cookies.txt contents OR path — required for reliable YouTube on Render
+    youtube_cookies: str = ""
+    youtube_cookies_file: str = ""
+    # Residential/mobile proxy URL, e.g. http://user:pass@host:port
+    youtube_http_proxy: str = ""
 
 
 settings = Settings()

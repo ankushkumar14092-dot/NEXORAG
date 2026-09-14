@@ -165,13 +165,19 @@ def _process_url(record: SourceRecord) -> None:
             segments = []
 
     if not segments:
-        # Render/cloud IPs are routinely bot-blocked by YouTube for yt-dlp downloads.
-        if yt_id and not settings.youtube_download_fallback:
-            _ = caption_error  # kept for debugging / future structured errors
+        # Render/cloud IPs are bot-blocked unless cookies or residential proxy are set.
+        from app.youtube_auth import ensure_youtube_cookie_file, youtube_proxy_url
+
+        allow_download = bool(settings.youtube_download_fallback) or bool(
+            ensure_youtube_cookie_file() or youtube_proxy_url()
+        )
+        if yt_id and not allow_download:
+            _ = caption_error
             raise RuntimeError(
                 "YouTube blocked this cloud server (HTTP 403). "
-                "Use the Vercel UI (caption proxy), upload the video file, "
-                "or run ingest on a local machine."
+                "Fix: set YOUTUBE_COOKIES on Render (browser cookies.txt), "
+                "or upload the video file, "
+                "or run locally: python scripts/ingest_youtube_remote.py <URL>"
             )
         audio_dir = settings.data_dir / "audio" / record.id
         audio_path, _ = download_audio_from_url(url, audio_dir)

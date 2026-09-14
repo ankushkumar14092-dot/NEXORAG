@@ -48,73 +48,95 @@ def _segments_from_json3(payload: dict) -> list[Segment]:
     return segments
 
 
+
 def _fetch_captions_innertube(video_id: str) -> list[Segment]:
-    """ANDROID InnerTube + timedtext — more reliable on cloud IPs than yt-dlp."""
-    headers = {
-        "User-Agent": _YT_UA,
-        "Accept-Language": "en-US,en;q=0.9",
-        "Content-Type": "application/json",
-    }
-    body = {
-        "context": {
-            "client": {
-                "clientName": "ANDROID",
-                "clientVersion": "20.10.38",
-                "hl": "en",
-                "gl": "US",
-            }
+    """InnerTube + timedtext. Uses cookies/proxy when configured (needed on Render)."""
+    from app.youtube_auth import httpx_client_kwargs
+
+    clients = [
+        {"clientName": "ANDROID", "clientVersion": "20.10.38"},
+        {
+            "clientName": "IOS",
+            "clientVersion": "20.10.4",
+            "deviceModel": "iPhone16,2",
+            "osName": "iOS",
+            "osVersion": "17.5",
         },
-        "videoId": video_id,
-    }
-    with httpx.Client(timeout=45.0, follow_redirects=True, headers=headers) as client:
-        resp = client.post(
-            "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
-            json=body,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        tracks = (
-            ((data.get("captions") or {}).get("playerCaptionsTracklistRenderer") or {})
-            .get("captionTracks")
-            or []
-        )
-        if not tracks:
-            raise RuntimeError("No captionTracks in InnerTube player response")
+    ]
+    preferred = ("en", "hi", "en-US", "en-GB", "en-IN")
+    errors: list[str] = []
 
-        preferred = ("en", "hi", "en-US", "en-GB", "en-IN")
-
-        def rank(track: dict) -> tuple:
-            code = (track.get("languageCode") or "").lower()
-            pref = preferred.index(code) if code in preferred else 99
-            generated = 1 if (track.get("kind") or "") == "asr" else 0
-            return (pref, generated)
-
-        for track in sorted(tracks, key=rank):
-            base = track.get("baseUrl") or ""
-            if not base:
-                continue
-            if "fmt=" in base:
-                base = re.sub(r"fmt=[^&]+", "fmt=json3", base)
-            else:
-                base = base + ("&" if "?" in base else "?") + "fmt=json3"
-            tt = client.get(
-                base,
-                headers={"User-Agent": _YT_UA, "Accept-Language": "en-US,en;q=0.9"},
+    with httpx.Client(**httpx_client_kwargs()) as client:
+        for cinfo in clients:
+            body = {
+                "context": {"client": {**cinfo, "hl": "en", "gl": "US"}},
+                "videoId": video_id,
+            }
+            resp = client.post(
+                "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+                json=body,
+                headers={"Content-Type": "application/json"},
             )
-            if tt.status_code != 200:
+            if resp.status_code != 200:
+                errors.append(f"{cinfo['clientName']}: HTTP {resp.status_code}")
                 continue
-            try:
-                payload = tt.json()
-            except Exception:
+            data = resp.json()
+            play = (data.get("playabilityStatus") or {}).get("status")
+            if play and play != "OK":
+                reason = (data.get("playabilityStatus") or {}).get("reason") or play
+                errors.append(f"{cinfo['clientName']}: {reason}")
                 continue
-            segments = _segments_from_json3(payload)
-            if segments:
-                return segments
-    raise RuntimeError("InnerTube caption tracks empty")
+            tracks = (
+                ((data.get("captions") or {}).get("playerCaptionsTracklistRenderer") or {})
+                .get("captionTracks")
+                or []
+            )
+            if not tracks:
+                errors.append(f"{cinfo['clientName']}: no captionTracks")
+                continue
+
+            def rank(track: dict) -> tuple:
+                code = (track.get("languageCode") or "").lower()
+                pref = preferred.index(code) if code in preferred else 99
+                generated = 1 if (track.get("kind") or "") == "asr" else 0
+                return (pref, generated)
+
+            for track in sorted(tracks, key=rank):
+                base = track.get("baseUrl") or ""
+                if not base:
+                    continue
+                if "fmt=" in base:
+                    base = re.sub(r"fmt=[^&]+", "fmt=json3", base)
+                else:
+                    base = base + ("&" if "?" in base else "?") + "fmt=json3"
+                tt = client.get(base)
+                if tt.status_code != 200:
+                    continue
+                try:
+                    payload = tt.json()
+                except Exception:
+                    continue
+                segments = _segments_from_json3(payload)
+                if segments:
+                    return segments
+            errors.append(f"{cinfo['clientName']}: empty timedtext")
+    raise RuntimeError(" | ".join(errors) or "InnerTube caption tracks empty")
+
 
 
 def _fetch_captions_library(video_id: str) -> list[Segment]:
-    api = YouTubeTranscriptApi()
+    from app.youtube_auth import youtube_proxy_url
+
+    proxy = youtube_proxy_url()
+    kwargs = {}
+    if proxy:
+        try:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+
+            kwargs["proxy_config"] = GenericProxyConfig(http_url=proxy, https_url=proxy)
+        except Exception:
+            pass
+    api = YouTubeTranscriptApi(**kwargs)
     fetched = None
     last_err: Exception | None = None
     try:
@@ -221,6 +243,8 @@ def fetch_youtube_captions(url: str) -> tuple[str, list[Segment], float | None]:
 def download_audio_from_url(url: str, out_dir: Path) -> tuple[Path, str]:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_tmpl = str(out_dir / "%(id)s.%(ext)s")
+    from app.youtube_auth import ensure_youtube_cookie_file, youtube_proxy_url
+
     cmd = [
         "yt-dlp",
         "-f",
@@ -233,8 +257,14 @@ def download_audio_from_url(url: str, out_dir: Path) -> tuple[Path, str]:
         "-o",
         out_tmpl,
         "--no-playlist",
-        url,
     ]
+    cookies = ensure_youtube_cookie_file()
+    if cookies:
+        cmd.extend(["--cookies", str(cookies)])
+    proxy = youtube_proxy_url()
+    if proxy:
+        cmd.extend(["--proxy", proxy])
+    cmd.append(url)
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "yt-dlp failed")

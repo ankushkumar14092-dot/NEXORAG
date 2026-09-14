@@ -21,6 +21,10 @@ services:
         value: "false"
       - key: YOUTUBE_CAPTION_PROXY
         value: "https://nexora-evidence.vercel.app/api/yt-captions"
+      - key: YOUTUBE_COOKIES
+        sync: false
+      - key: YOUTUBE_HTTP_PROXY
+        sync: false
       - key: CORS_ORIGINS
         value: "*"
     disk:

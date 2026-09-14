@@ -13,3 +13,6 @@ data/
 .pytest_cache/
 .cursor/
 *.log
+
+youtube.cookies.txt
+*.cookies.txt

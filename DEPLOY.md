@@ -20,9 +20,47 @@ Required env (in `.env` or host secrets):
 1. Push this repo to GitHub (do **not** commit `.env`).
 2. [Render](https://dashboard.render.com) → New → Blueprint → select repo (`render.yaml`).
 3. Set secret `FIREWORKS_API_KEY` in the dashboard.
-4. Use a plan with **disk** (Blueprint mounts `/app/data`).
+4. Use a plan with **disk** (Blueprint mounts `/app/data`). **Without disk, uploads vanish on every deploy.**
 
 Whisper + uploads need RAM/disk — free tiers often OOM. Prefer **Starter** or higher.
+
+### YouTube on Render (required for URL ingest)
+
+YouTube blocks Render/Vercel datacenter IPs (`403` / “Sign in to confirm you’re not a bot”).
+Localhost works because your home IP is not blocked.
+
+**Pick one:**
+
+#### A) Browser cookies (recommended for URL ingest)
+
+1. On your laptop, install a cookies.txt exporter (Chrome: “Get cookies.txt LOCALLY”).
+2. Visit youtube.com while logged in → export `cookies.txt`.
+3. Render → Environment → add:
+
+```text
+YOUTUBE_COOKIES=<<paste full Netscape cookies.txt contents>>
+```
+
+Or upload the file to disk and set:
+
+```text
+YOUTUBE_COOKIES_FILE=/app/data/youtube.cookies.txt
+```
+
+4. Redeploy. Check `GET /api/health` → `youtube.cloud_youtube_ready: true`.
+
+Cookies expire — re-export when YouTube ingest breaks again.
+
+#### B) Residential HTTP proxy
+
+```text
+YOUTUBE_HTTP_PROXY=http://user:pass@proxy-host:port
+```
+
+#### C) No cookies / proxy
+
+- Upload the **video/audio file**, or
+- From your laptop: `PYTHONPATH=. python scripts/ingest_youtube_remote.py 'YOUTUBE_URL'`
 
 ## 3. Fly.io
 
@@ -48,5 +86,5 @@ vercel --prod
 ## 5. Notes
 
 - Single worker (`--workers 1`) — in-memory RAM cache + BM25 index are process-local.
-- Video URL ingest needs outbound network + yt-dlp; some hosts block YouTube.
-- Do not bake API keys into the image.
+- Do not bake API keys or YouTube cookies into the image / git.
+- Faster answers: set `PREFER_FAST_MODEL=true` on Render.
