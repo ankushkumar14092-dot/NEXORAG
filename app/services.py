@@ -18,36 +18,47 @@ from app.rag import answer_with_context, retriever
 from app.security import safe_rmtree, safe_unlink, sanitize_filename, validate_source_id
 
 _SUMMARY_RE = re.compile(
-    r"(?i)\b(summarize|summary|overview|tl;?dr|main\s+points?|key\s+takeaways?|"
-    r"what('?s|\s+is)?\s+(this|the)?\s*(video|doc|document|page)?\s*(about)?|"
-    r"is\s+(video|ismein|isme)\s+mein\s+kya|kya\s+bataya|samjha\s*o?|khulasa)\b"
+    r"(?i)\b(?:"
+    r"summarize|summary|overview|tl;?dr|"
+    r"main\s+points?|key\s+takeaways?|overall\s+khulasa|"
+    r"what(?:'?s|\s+is)\s+(?:this|the)\s+(?:video|doc|document|page|episode)(?:\s+about)?|"
+    r"(?:is\s+)?(?:this\s+)?video\s+mein\s+kya(?:\s+bataya)?|"
+    r"ismein\s+kya\s+bataya|isme\s+mein\s+kya\s+bataya"
+    r")\b"
 )
 _REGION_END_RE = re.compile(
-    r"(?i)\b(end|ending|last|finale|conclusion|closing|akhir|aakhir|ant|"
-    r"last\s+part|second\s+half|baad\s*(mein|me)?|end\s*(mein|me)?|"
-    r"towards?\s+the\s+end|near\s+the\s+end)\b"
+    r"(?i)\b(?:"
+    r"end(?:ing)?|finale|conclusion|closing|akhir|aakhir|ant|"
+    r"last\s+part|last\s+section|last\s+bit|last\s+half|"
+    r"second\s+half|latter\s+half|middle\s+last|"
+    r"baad\s*(?:mein|me)|end\s*(?:mein|me)|"
+    r"towards?\s+the\s+end|near\s+the\s+end|at\s+the\s+end"
+    r")\b"
 )
 _REGION_MID_RE = re.compile(
-    r"(?i)\b(middle|mid(?:dle)?|halfway|midway|beech|beech\s*(mein|me)?|"
-    r"center|centre|mid\s*section)\b"
+    r"(?i)\b(?:middle|midway|halfway|mid\s*section|"
+    r"beech(?:\s*(?:mein|me))?|center|centre)\b"
 )
 _REGION_START_RE = re.compile(
-    r"(?i)\b(start|beginning|opening|intro|shuru|pehle|first\s+part|"
-    r"shuruaat|beginning\s+mein)\b"
+    r"(?i)\b(?:start|beginning|opening|intro|shuru|shuruaat|"
+    r"first\s+part|beginning\s+mein|start\s*(?:mein|me))\b"
 )
 
 
 def _detect_time_region(question: str) -> str | None:
-    """Return start|middle|end when the user asks about a video section."""
+    """Return start|middle|end|middle_end when user asks about a video section."""
     q = question or ""
-    # Prefer more specific end/middle over start when both appear ("middle last").
-    if _REGION_END_RE.search(q) and _REGION_MID_RE.search(q):
+    has_end = bool(_REGION_END_RE.search(q))
+    has_mid = bool(_REGION_MID_RE.search(q))
+    has_start = bool(_REGION_START_RE.search(q))
+    # "middle last" / both middle+end => latter half
+    if has_mid and has_end:
         return "middle_end"
-    if _REGION_END_RE.search(q):
+    if has_end:
         return "end"
-    if _REGION_MID_RE.search(q):
+    if has_mid:
         return "middle"
-    if _REGION_START_RE.search(q):
+    if has_start:
         return "start"
     return None
 
@@ -124,7 +135,7 @@ class QueryService:
     ) -> dict:
         cache_key = TempRAMCache.make_key(
             "q",
-            "ml4",
+            "ml5",
             store.revision,
             question.strip().lower(),
             source_id or "",
