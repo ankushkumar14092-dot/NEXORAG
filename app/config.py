@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
     # Cloud hosts (Render) are often bot-blocked by YouTube — captions-only by default
     youtube_download_fallback: bool = False
+    # Optional caption proxy (Vercel serverless) used when Render IP gets YouTube 403
+    youtube_caption_proxy: str = "https://nexora-evidence.vercel.app/api/yt-captions"
 
 
 settings = Settings()

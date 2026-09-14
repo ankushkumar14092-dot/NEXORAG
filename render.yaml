@@ -19,6 +19,8 @@ services:
         value: "60"
       - key: YOUTUBE_DOWNLOAD_FALLBACK
         value: "false"
+      - key: YOUTUBE_CAPTION_PROXY
+        value: "https://nexora-evidence.vercel.app/api/yt-captions"
       - key: CORS_ORIGINS
         value: "*"
     disk:

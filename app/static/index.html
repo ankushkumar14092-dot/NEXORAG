@@ -735,9 +735,46 @@
       refreshSources();
     }
 
+    function extractYoutubeId(url) {
+      const m = String(url || "").match(/(?:v=|\/shorts\/|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
+      return m ? m[1] : null;
+    }
+
     async function ingestUrl() {
       const url = document.getElementById("url").value.trim();
       if (!url) return alert("Paste a URL");
+      setMsg("ingestMsg", "Fetching captions…");
+
+      // Prefer Vercel caption proxy (Render IP is blocked by YouTube).
+      const ytId = extractYoutubeId(url);
+      if (ytId) {
+        try {
+          const capRes = await fetch(`${(window.NEXORA_CAPTION_PROXY || "https://nexora-evidence.vercel.app/api/yt-captions")}?v=${encodeURIComponent(ytId)}`);
+          const cap = await capRes.json().catch(() => ({}));
+          if (capRes.ok && Array.isArray(cap.segments) && cap.segments.length) {
+            const res = await apiFetch("/api/ingest/captions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url,
+                title: cap.title || null,
+                segments: cap.segments,
+                method: cap.method || "youtube_captions_proxy",
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok) return setMsg("ingestMsg", data.detail || "Failed", true);
+            selectedId = data.source.id;
+            setMsg("ingestMsg", `Queued · ${data.source.title}`);
+            startPolling();
+            await refreshSources();
+            return;
+          }
+        } catch (err) {
+          // fall through to Render URL ingest
+        }
+      }
+
       setMsg("ingestMsg", "Queuing URL…");
       const res = await apiFetch("/api/ingest/url", {
         method: "POST",

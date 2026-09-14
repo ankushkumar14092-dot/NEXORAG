@@ -30,6 +30,7 @@ from app.pipeline import (
     create_url_record,
     create_web_record,
     process_document,
+    process_prefetched_captions,
     process_video,
 )
 from app.recovery import backup_store, list_backups, restore_store
@@ -81,6 +82,19 @@ VIDEO_EXTENSIONS = {
 
 class UrlIngestRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=2000)
+
+
+class CaptionSegIn(BaseModel):
+    start: float = Field(..., ge=0)
+    end: float = Field(..., ge=0)
+    text: str = Field(..., min_length=1, max_length=8000)
+
+
+class CaptionsIngestRequest(BaseModel):
+    url: str = Field(..., min_length=8, max_length=2000)
+    title: str | None = Field(default=None, max_length=300)
+    segments: list[CaptionSegIn] = Field(..., min_length=1, max_length=60000)
+    method: str = Field(default="youtube_captions_proxy", max_length=64)
 
 
 class WebIngestRequest(BaseModel):
@@ -258,6 +272,32 @@ async def ingest_url(
         )
     record = create_url_record(url)
     background_tasks.add_task(process_video, record.id)
+    return {"video": record.public_dict(), "source": record.public_dict()}
+
+
+@app.post("/api/ingest/captions")
+async def ingest_captions(
+    body: CaptionsIngestRequest,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """Index YouTube captions already fetched by the Vercel caption proxy."""
+    url = body.url.strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "URL must start with http:// or https://")
+    if not extract_youtube_id(url):
+        raise HTTPException(400, "url must be a valid YouTube watch/shorts link")
+    record = create_url_record(url)
+    if body.title:
+        record.title = body.title[:200]
+        store.save(record)
+    segs = [s.model_dump() for s in body.segments]
+    background_tasks.add_task(
+        process_prefetched_captions,
+        record.id,
+        segs,
+        method=body.method or "youtube_captions_proxy",
+        title=body.title,
+    )
     return {"video": record.public_dict(), "source": record.public_dict()}
 
 

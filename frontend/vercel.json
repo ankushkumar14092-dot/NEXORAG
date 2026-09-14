@@ -1,16 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": null,
-  "buildCommand": null,
+  "buildCommand": "npm run build",
   "outputDirectory": ".",
-  "cleanUrls": true,
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=60" }
-      ]
-    }
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

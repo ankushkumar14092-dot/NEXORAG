@@ -167,12 +167,11 @@ def _process_url(record: SourceRecord) -> None:
     if not segments:
         # Render/cloud IPs are routinely bot-blocked by YouTube for yt-dlp downloads.
         if yt_id and not settings.youtube_download_fallback:
-            detail = str(caption_error) if caption_error else "no caption tracks"
+            _ = caption_error  # kept for debugging / future structured errors
             raise RuntimeError(
-                "YouTube captions could not be fetched "
-                f"({detail}). Cloud servers cannot reliably download YouTube audio "
-                "(bot check). Use a video that has captions/CC, upload the file, "
-                "or set YOUTUBE_DOWNLOAD_FALLBACK=true with cookies for local/dev."
+                "YouTube blocked this cloud server (HTTP 403). "
+                "Use the Vercel UI (caption proxy), upload the video file, "
+                "or run ingest on a local machine."
             )
         audio_dir = settings.data_dir / "audio" / record.id
         audio_path, _ = download_audio_from_url(url, audio_dir)
@@ -186,6 +185,64 @@ def _process_url(record: SourceRecord) -> None:
     record.duration = duration
     record.transcript_method = method
     record.chunks = segments_to_chunks(record.id, segments)
+
+def apply_caption_segments(
+    record: SourceRecord,
+    segments: list,
+    *,
+    method: str = "youtube_captions",
+    title: str | None = None,
+) -> None:
+    """Index pre-fetched caption segments onto a video record."""
+    from app.models import Segment
+
+    typed: list[Segment] = []
+    for item in segments:
+        if isinstance(item, Segment):
+            typed.append(item)
+            continue
+        text = str(getattr(item, "text", None) or item.get("text") or "").strip()
+        if not text:
+            continue
+        start = float(getattr(item, "start", None) or item.get("start") or 0)
+        end = float(getattr(item, "end", None) or item.get("end") or start + 2)
+        typed.append(Segment(start=start, end=end, text=text))
+    if not typed:
+        raise RuntimeError("No caption segments to index")
+    if title:
+        record.title = title[:200]
+    record.segments = typed
+    record.duration = typed[-1].end
+    record.transcript_method = method
+    record.chunks = segments_to_chunks(record.id, typed)
+    record.status = "ready"
+    record.error = None
+    record.updated_at = utc_now()
+    store.save(record)
+    retriever.refresh()
+
+
+def process_prefetched_captions(
+    video_id: str,
+    segments: list,
+    *,
+    method: str = "youtube_captions_proxy",
+    title: str | None = None,
+) -> None:
+    record = store.get(video_id)
+    if not record:
+        return
+    record.status = "processing"
+    record.error = None
+    store.save(record)
+    try:
+        apply_caption_segments(record, segments, method=method, title=title)
+    except Exception as exc:
+        record.status = "error"
+        record.error = str(exc)
+        store.save(record)
+        traceback.print_exc()
+
 
 def _process_upload(record: SourceRecord) -> None:
     video_path = Path(record.source)

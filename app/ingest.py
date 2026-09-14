@@ -152,6 +152,33 @@ def _fetch_captions_library(video_id: str) -> list[Segment]:
     return segments
 
 
+def _fetch_captions_proxy(video_id: str) -> tuple[list[Segment], str | None]:
+    proxy = (settings.youtube_caption_proxy or "").strip().rstrip("/")
+    if not proxy:
+        raise RuntimeError("youtube_caption_proxy not configured")
+    url = f"{proxy}?v={video_id}"
+    with httpx.Client(timeout=60.0, follow_redirects=True) as client:
+        resp = client.get(url)
+        if resp.status_code != 200:
+            detail = resp.text[:300]
+            raise RuntimeError(f"proxy HTTP {resp.status_code}: {detail}")
+        data = resp.json()
+    raw = data.get("segments") or []
+    title = data.get("title")
+    segments = [
+        Segment(
+            start=float(item.get("start") or 0),
+            end=float(item.get("end") or float(item.get("start") or 0) + 2),
+            text=str(item.get("text") or "").replace("\n", " ").strip(),
+        )
+        for item in raw
+        if str(item.get("text") or "").strip()
+    ]
+    if not segments:
+        raise RuntimeError("caption proxy returned empty segments")
+    return segments, title if isinstance(title, str) else None
+
+
 def fetch_youtube_captions(url: str) -> tuple[str, list[Segment], float | None]:
     video_id = extract_youtube_id(url)
     if not video_id:
@@ -159,8 +186,9 @@ def fetch_youtube_captions(url: str) -> tuple[str, list[Segment], float | None]:
 
     errors: list[str] = []
     segments: list[Segment] = []
+    proxy_title: str | None = None
 
-    # InnerTube first — works on many cloud IPs where the public transcript API is blocked.
+    # InnerTube first — works on residential IPs; often 403 on Render.
     try:
         segments = _fetch_captions_innertube(video_id)
     except Exception as exc:
@@ -172,12 +200,21 @@ def fetch_youtube_captions(url: str) -> tuple[str, list[Segment], float | None]:
         except Exception as exc:
             errors.append(f"library: {exc}")
 
+    # Vercel (or other) proxy — different IP from Render datacenter.
+    if not segments:
+        try:
+            segments, proxy_title = _fetch_captions_proxy(video_id)
+        except Exception as exc:
+            errors.append(f"proxy: {exc}")
+
     if not segments:
         raise RuntimeError(
             "YouTube captions unavailable (" + " | ".join(errors) + ")"
         )
 
     duration_val = segments[-1].end if segments else None
+    # proxy_title unused here; caller may refresh title via oEmbed
+    _ = proxy_title
     return video_id, segments, duration_val
 
 

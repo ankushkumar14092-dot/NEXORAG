@@ -2,5 +2,8 @@
   "name": "nexora-evidence-desk-ui",
   "private": true,
   "version": "0.6.0",
-  "description": "Static Evidence Desk UI for Vercel (API on Render)"
+  "description": "Static Evidence Desk UI + YouTube caption proxy for Vercel",
+  "scripts": {
+    "build": "echo static-ok"
+  }
 }
