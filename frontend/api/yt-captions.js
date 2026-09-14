@@ -25,7 +25,7 @@ function segmentsFromJson3(payload) {
   return out;
 }
 
-async function player(client, videoId) {
+async function player(client, videoId, cookieHeader = "") {
   const body = {
     context: { client: { ...client, hl: "en", gl: "US" } },
     videoId,
@@ -34,17 +34,19 @@ async function player(client, videoId) {
     body.context.client.clientScreen = "EMBED";
     body.context.thirdParty = { embedUrl: "https://www.youtube.com/" };
   }
+  const headers = {
+    "User-Agent": UA,
+    "Content-Type": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    Origin: "https://www.youtube.com",
+    Referer: `https://www.youtube.com/watch?v=${videoId}`,
+  };
+  if (cookieHeader) headers.Cookie = cookieHeader;
   const resp = await fetch(
     "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
     {
       method: "POST",
-      headers: {
-        "User-Agent": UA,
-        "Content-Type": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        Origin: "https://www.youtube.com",
-        Referer: `https://www.youtube.com/watch?v=${videoId}`,
-      },
+      headers,
       body: JSON.stringify(body),
     }
   );
@@ -71,9 +73,25 @@ async function fetchViaInnertube(videoId) {
     { clientName: "ANDROID_VR", clientVersion: "1.60.19" },
     { clientName: "TVHTML5", clientVersion: "7.20240701.16.00" },
   ];
+  const cookieEnv = (process.env.YOUTUBE_COOKIES || "").trim();
+  let cookieHeader = "";
+  if (cookieEnv.includes("\t")) {
+    cookieHeader = cookieEnv
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => {
+        const parts = line.split("\t");
+        return parts.length >= 7 ? `${parts[5]}=${parts[6]}` : "";
+      })
+      .filter(Boolean)
+      .join("; ");
+  } else if (cookieEnv.includes("=")) {
+    cookieHeader = cookieEnv.replace(/\n/g, "; ");
+  }
   const errors = [];
   for (const client of clients) {
-    const { status, data, raw } = await player(client, videoId);
+    const { status, data, raw } = await player(client, videoId, cookieHeader);
     if (status !== 200 || !data) {
       errors.push(`${client.clientName}: HTTP ${status} ${raw}`);
       continue;
@@ -110,13 +128,13 @@ async function fetchViaInnertube(videoId) {
       if (!base) continue;
       if (base.includes("fmt=")) base = base.replace(/fmt=[^&]+/, "fmt=json3");
       else base += (base.includes("?") ? "&" : "?") + "fmt=json3";
-      const tt = await fetch(base, {
-        headers: {
-          "User-Agent": UA,
-          "Accept-Language": "en-US,en;q=0.9",
-          Referer: `https://www.youtube.com/watch?v=${videoId}`,
-        },
-      });
+      const ttHeaders = {
+        "User-Agent": UA,
+        "Accept-Language": "en-US,en;q=0.9",
+        Referer: `https://www.youtube.com/watch?v=${videoId}`,
+      };
+      if (cookieHeader) ttHeaders.Cookie = cookieHeader;
+      const tt = await fetch(base, { headers: ttHeaders });
       if (!tt.ok) {
         errors.push(`timedtext ${track.languageCode}: HTTP ${tt.status}`);
         continue;

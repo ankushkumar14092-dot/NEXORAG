@@ -85,6 +85,11 @@ class UrlIngestRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=2000)
 
 
+class YoutubeCookiesInstallRequest(BaseModel):
+    cookies: str = Field(..., min_length=20, max_length=500_000)
+    setup_key: str = Field(..., min_length=8, max_length=200)
+
+
 class CaptionSegIn(BaseModel):
     start: float = Field(..., ge=0)
     end: float = Field(..., ge=0)
@@ -196,6 +201,52 @@ async def list_sources(kind: str | None = None) -> dict:
     if kind and kind not in {"video", "document"}:
         raise HTTPException(400, "kind must be video or document")
     return {"sources": source_service.list(kind=kind)}
+
+
+@app.get("/api/youtube/captions")
+async def youtube_captions_preview(url: str = "", v: str = "") -> dict:
+    """Fetch captions now (used by cloud UI via local bridge, or ops checks)."""
+    from app.ingest import fetch_youtube_captions, resolve_title_from_url
+
+    raw = (url or "").strip() or (
+        f"https://www.youtube.com/watch?v={v.strip()}" if v.strip() else ""
+    )
+    if not raw:
+        raise HTTPException(400, "Provide url= or v=")
+    try:
+        video_id, segments, duration = fetch_youtube_captions(raw)
+    except Exception as exc:
+        raise HTTPException(502, f"Caption fetch failed: {exc}") from exc
+    title = resolve_title_from_url(raw)
+    return {
+        "ok": True,
+        "video_id": video_id,
+        "title": title,
+        "duration": duration,
+        "segment_count": len(segments),
+        "segments": [
+            {"start": s.start, "end": s.end, "text": s.text} for s in segments
+        ],
+        "method": "youtube_captions",
+    }
+
+
+@app.post("/api/admin/youtube-cookies")
+async def install_youtube_cookies_route(body: YoutubeCookiesInstallRequest) -> dict:
+    """Install Netscape cookies on the server disk (Render).
+
+    Auth: setup_key must match FIREWORKS_API_KEY already configured on the service.
+    """
+    from app.youtube_auth import install_youtube_cookies, youtube_auth_status
+
+    expected = (settings.fireworks_api_key or "").strip()
+    if not expected or body.setup_key.strip() != expected:
+        raise HTTPException(401, "Invalid setup_key")
+    try:
+        path = install_youtube_cookies(body.cookies)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "path": str(path), "youtube": youtube_auth_status()}
 
 
 @app.get("/api/videos")

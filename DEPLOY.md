@@ -33,23 +33,25 @@ Localhost works because your home IP is not blocked.
 
 #### A) Browser cookies (recommended for URL ingest)
 
-1. On your laptop, install a cookies.txt exporter (Chrome: “Get cookies.txt LOCALLY”).
-2. Visit youtube.com while logged in → export `cookies.txt`.
-3. Render → Environment → add:
+Fast path (no Render dashboard paste):
 
-```text
-YOUTUBE_COOKIES=<<paste full Netscape cookies.txt contents>>
+```bash
+./scripts/export_youtube_cookies.sh safari   # or chrome
+PYTHONPATH=. python scripts/push_youtube_cookies.py
 ```
 
-Or upload the file to disk and set:
+This POSTs cookies to `/api/admin/youtube-cookies` (auth = your `FIREWORKS_API_KEY`) and stores them on the Render disk.
 
-```text
-YOUTUBE_COOKIES_FILE=/app/data/youtube.cookies.txt
-```
+Manual path:
 
-4. Redeploy. Check `GET /api/health` → `youtube.cloud_youtube_ready: true`.
+1. Chrome extension “Get cookies.txt LOCALLY” → export youtube.com while logged in.
+2. Render → Environment → `YOUTUBE_COOKIES` = paste file contents → redeploy.
 
-Cookies expire — re-export when YouTube ingest breaks again.
+Check `GET /api/health` → `youtube.cloud_youtube_ready: true`.
+
+Cookies expire — re-export + push when YouTube ingest breaks again.
+
+Cloud UI tip: with local `uvicorn` on `:8000`, Process can fetch captions via localhost bridge even before cookies are installed.
 
 #### B) Residential HTTP proxy
 
