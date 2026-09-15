@@ -148,6 +148,22 @@ def _strip_model_preamble(text: str) -> str:
     # If model started with "Finding:" without #
     if raw.lower().startswith("finding"):
         return raw
+    # Drop common leaked planner openers when no Finding heading exists
+    lower = raw.lower()
+    for bad in (
+        "the user asks",
+        "the user asked",
+        "i need to",
+        "let me draft",
+        "let me write",
+        "evidence is from",
+    ):
+        if lower.startswith(bad):
+            # Keep from first markdown heading if any later
+            for i, ch in enumerate(raw):
+                if ch == "#" and (i == 0 or raw[i - 1] == "\n"):
+                    return raw[i:].strip()
+            break
     return raw
 
 
