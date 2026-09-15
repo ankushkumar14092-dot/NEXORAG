@@ -736,6 +736,7 @@
       document.getElementById("videoIngest").classList.toggle("hidden", mode !== "video");
       document.getElementById("ingestTitle").textContent = mode === "document" ? "Index" : "Reels";
       refreshSources();
+      bootOpsStatus();
     }
 
     function extractYoutubeId(url) {
@@ -791,29 +792,44 @@
     async function bootOpsStatus() {
       const ops = document.getElementById("opsMsg");
       if (!ops) return;
-      const bits = [];
+      let apiOk = false;
+      let localOk = false;
+      let persistent = null;
+      let ytCloud = false;
       try {
         const health = await apiFetch("/api/health").then((r) => r.json());
-        const storage = health.storage || {};
-        if (storage.persistent === false) {
-          bits.push("Storage: ephemeral (Render disk missing — index can wipe on redeploy; browser mirror on)");
-        } else if (storage.persistent === true) {
-          bits.push("Storage: persistent");
-        }
-        const yt = health.youtube || {};
-        if (yt.cloud_youtube_ready) bits.push("YouTube cloud: ready");
-        else bits.push("YouTube cloud: needs local :8000 or cookies");
+        apiOk = !!health.ok;
+        persistent = !!(health.storage && health.storage.persistent);
+        ytCloud = !!(health.youtube && health.youtube.cloud_youtube_ready);
       } catch (e) {
-        bits.push("API unreachable");
+        apiOk = false;
       }
       try {
         const local = await fetch("http://127.0.0.1:8000/api/health", { mode: "cors" });
-        bits.push(local.ok ? "Local bridge: on" : "Local bridge: down");
+        localOk = !!local.ok;
       } catch (e) {
-        bits.push("Local bridge: down");
+        localOk = false;
       }
+
+      const bits = [];
+      if (!apiOk) {
+        bits.push("API offline");
+      } else if (persistent) {
+        bits.push("Storage OK");
+      } else {
+        // Free plan — expected, not an error
+        bits.push("Free plan OK (redeploy may reset index; browser backup on)");
+      }
+
+      if (ytCloud || localOk) {
+        bits.push(localOk ? "YouTube OK (local bridge)" : "YouTube OK (cloud)");
+      } else {
+        bits.push("YouTube: start local :8000 for URL ingest");
+      }
+
       ops.textContent = bits.join(" · ");
-      ops.classList.toggle("bad", bits.some((b) => b.includes("ephemeral") || b.includes("unreachable")));
+      // Red only for real breakage — not Free-plan ephemeral storage
+      ops.classList.toggle("bad", !apiOk || (!ytCloud && !localOk && mode === "video"));
     }
 
     async function mirrorDeskToBrowser() {
