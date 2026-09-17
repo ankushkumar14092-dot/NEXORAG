@@ -14,31 +14,74 @@ from app.config import settings
 
 _COOKIE_FILE: Path | None = None
 
+# InnerTube rejects oversized Cookie headers (HTTP 413). Keep only session markers.
+_AUTH_COOKIE_NAMES = frozenset(
+    {
+        "LOGIN_INFO",
+        "SID",
+        "HSID",
+        "SSID",
+        "APISID",
+        "SAPISID",
+        "__Secure-1PSID",
+        "__Secure-3PSID",
+        "__Secure-1PSIDTS",
+        "__Secure-3PSIDTS",
+        "__Secure-1PAPISID",
+        "__Secure-3PAPISID",
+        "__Secure-1PSIDCC",
+        "__Secure-3PSIDCC",
+        "PREF",
+        "CONSENT",
+        "VISITOR_INFO1_LIVE",
+        "YSC",
+        "SESSION_TOKEN",
+    }
+)
+
 
 def youtube_proxy_url() -> str | None:
     raw = (settings.youtube_http_proxy or "").strip()
     return raw or None
 
 
+def _iter_netscape_rows(path: Path):
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        parts = raw.split("\t")
+        if len(parts) >= 7 and parts[5]:
+            yield parts[0], parts[5], parts[6], raw
+        elif "=" in raw and not raw.startswith("http"):
+            name, value = raw.split("=", 1)
+            yield ".youtube.com", name.strip(), value.strip(), raw
+
+
+def _is_auth_cookie(name: str) -> bool:
+    return name in _AUTH_COOKIE_NAMES or name.startswith("__Secure-")
+
+
 def youtube_cookie_header() -> str | None:
-    """Build Cookie header from Netscape cookies env / file."""
+    """Slim Cookie header — full exports blow past YouTube's request limit (413)."""
     path = ensure_youtube_cookie_file()
     if not path:
         return None
-    pairs: list[str] = []
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    # name -> (score, value); prefer youtube.com over google.com
+    best: dict[str, tuple[tuple[int, int], str]] = {}
+    for domain, name, value, _raw in _iter_netscape_rows(path):
+        host = domain.lower().lstrip(".")
+        if "youtube.com" not in host and "google.com" not in host:
             continue
-        parts = line.split("\t")
-        if len(parts) >= 7:
-            name, value = parts[5], parts[6]
-            if name:
-                pairs.append(f"{name}={value}")
-        elif "=" in line and not line.startswith("http"):
-            # allow simple name=value lines
-            pairs.append(line)
-    return "; ".join(pairs) if pairs else None
+        if not _is_auth_cookie(name):
+            continue
+        score = (2 if "youtube.com" in host else 1, len(host))
+        prev = best.get(name)
+        if prev is None or score > prev[0]:
+            best[name] = (score, value)
+    if not best:
+        return None
+    return "; ".join(f"{name}={val}" for name, (_s, val) in best.items())
 
 
 def clear_youtube_cookie_cache() -> None:

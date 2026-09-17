@@ -67,6 +67,49 @@ def test_ram_cache_byte_budget_and_oversized_skip():
     assert cache.stats()["entries"] <= cache.max_entries
 
 
+def test_youtube_cookie_header_is_slim(tmp_path, monkeypatch):
+    from app import youtube_auth
+
+    cookie_path = tmp_path / "youtube.cookies.txt"
+    rows = ["# Netscape HTTP Cookie File"]
+    # pad with junk that must be dropped from the Cookie header
+    for i in range(200):
+        rows.append(
+            "\t".join(
+                [
+                    ".youtube.com",
+                    "TRUE",
+                    "/",
+                    "TRUE",
+                    "2147483647",
+                    f"JUNK{i}",
+                    "x" * 80,
+                ]
+            )
+        )
+    rows.append(
+        "\t".join(
+            [".youtube.com", "TRUE", "/", "TRUE", "2147483647", "LOGIN_INFO", "abc"]
+        )
+    )
+    rows.append(
+        "\t".join(
+            [".youtube.com", "TRUE", "/", "TRUE", "2147483647", "SID", "sidval"]
+        )
+    )
+    cookie_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    monkeypatch.setattr(youtube_auth.settings, "data_dir", tmp_path)
+    monkeypatch.setattr(youtube_auth.settings, "youtube_cookies", "")
+    monkeypatch.setattr(youtube_auth.settings, "youtube_cookies_file", "")
+    youtube_auth.clear_youtube_cookie_cache()
+    header = youtube_auth.youtube_cookie_header()
+    assert header is not None
+    assert "LOGIN_INFO=abc" in header
+    assert "SID=sidval" in header
+    assert "JUNK0" not in header
+    assert len(header.encode("utf-8")) < 8_000
+
+
 def test_ram_cache_invalidate_source_by_payload():
     cache = TempRAMCache(max_entries=10, max_bytes=10_000_000, default_ttl_seconds=60)
     k1 = TempRAMCache.make_key("q", "vid_aaa", "hello")

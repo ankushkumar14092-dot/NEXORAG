@@ -919,15 +919,27 @@
           return;
         }
 
-        // Never queue a doomed YouTube URL job on cloud IPs.
-        return setMsg(
-          "ingestMsg",
-          "YouTube captions unavailable from cloud. Keep local server on :8000 and retry, upload MP4, or push logged-in cookies (scripts/push_youtube_cookies.py).",
-          true
-        );
+        // Captions failed from every bridge — if cloud cookies/proxy are ready,
+        // queue Render download+Whisper instead of demanding localhost.
+        let cloudReady = false;
+        try {
+          const health = await apiFetch("/api/health").then((r) => r.json());
+          cloudReady = !!(health.youtube && health.youtube.cloud_youtube_ready);
+        } catch (e) {
+          cloudReady = false;
+        }
+        if (!cloudReady) {
+          return setMsg(
+            "ingestMsg",
+            "YouTube blocked on cloud. Upload MP4, or push logged-in cookies (scripts/push_youtube_cookies.py).",
+            true
+          );
+        }
+        setMsg("ingestMsg", "Captions blocked — downloading audio on cloud…");
+      } else {
+        setMsg("ingestMsg", "Queuing URL…");
       }
 
-      setMsg("ingestMsg", "Queuing URL…");
       const res = await apiFetch("/api/ingest/url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
