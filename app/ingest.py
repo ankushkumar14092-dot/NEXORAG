@@ -195,6 +195,8 @@ def _ytdlp_base_cmd() -> list[str]:
         "--js-runtimes",
         "node",
         "--no-playlist",
+        # Fresh cookies often unlock metadata/subs before media formats resolve.
+        "--ignore-no-formats-error",
     ]
 
 
@@ -287,12 +289,10 @@ def _fetch_captions_ytdlp(video_id: str) -> list[Segment]:
         url,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(_ytdlp_error_text(result))
-
+    # Subs can succeed even when returncode != 0 (format warnings).
     vtts = sorted(out_dir.glob(f"{video_id}*.vtt"))
     if not vtts:
-        raise RuntimeError("yt-dlp wrote no VTT subtitles")
+        raise RuntimeError(_ytdlp_error_text(result) if result.returncode else "yt-dlp wrote no VTT subtitles")
     # Prefer English, then Hindi, then first file
     preferred = sorted(
         vtts,
