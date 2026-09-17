@@ -188,6 +188,107 @@ def _fetch_captions_library(video_id: str) -> list[Segment]:
     return segments
 
 
+def _parse_vtt(text: str) -> list[Segment]:
+    """Minimal WebVTT → segments (enough for YouTube auto-subs)."""
+    segments: list[Segment] = []
+    # 00:00:01.000 --> 00:00:04.000
+    ts = re.compile(
+        r"(?P<s>(?:\d{1,2}:)?\d{2}:\d{2}[\.,]\d{3})\s*-->\s*"
+        r"(?P<e>(?:\d{1,2}:)?\d{2}:\d{2}[\.,]\d{3})"
+    )
+
+    def _to_sec(raw: str) -> float:
+        raw = raw.replace(",", ".")
+        parts = raw.split(":")
+        if len(parts) == 3:
+            h, m, s = parts
+        else:
+            h, m, s = "0", parts[0], parts[1]
+        return int(h) * 3600 + int(m) * 60 + float(s)
+
+    blocks = re.split(r"\n\s*\n", text.replace("\r\n", "\n"))
+    for block in blocks:
+        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        if not lines:
+            continue
+        m = None
+        text_lines: list[str] = []
+        for i, ln in enumerate(lines):
+            m = ts.search(ln)
+            if m:
+                text_lines = lines[i + 1 :]
+                break
+        if not m or not text_lines:
+            continue
+        body = " ".join(
+            re.sub(r"<[^>]+>", "", ln) for ln in text_lines
+        ).strip()
+        if not body:
+            continue
+        segments.append(
+            Segment(start=_to_sec(m.group("s")), end=_to_sec(m.group("e")), text=body)
+        )
+    return segments
+
+
+def _fetch_captions_ytdlp(video_id: str) -> list[Segment]:
+    """Pull official/auto subs via yt-dlp (cookie file, not Cookie header)."""
+    import tempfile
+
+    from app.youtube_auth import ensure_youtube_cookie_file, youtube_proxy_url
+
+    out_dir = Path(tempfile.mkdtemp(prefix="nexora_yt_subs_"))
+    out_tmpl = str(out_dir / video_id)
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    cmd = [
+        "yt-dlp",
+        "--skip-download",
+        "--write-auto-sub",
+        "--write-sub",
+        "--sub-lang",
+        "en.*,hi.*,en,hi",
+        "--sub-format",
+        "vtt/best",
+        "-o",
+        out_tmpl,
+        "--no-playlist",
+        url,
+    ]
+    cookies = ensure_youtube_cookie_file()
+    if cookies:
+        cmd.extend(["--cookies", str(cookies)])
+    proxy = youtube_proxy_url()
+    if proxy:
+        cmd.extend(["--proxy", proxy])
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "yt-dlp subtitle failed").strip()
+        raise RuntimeError(err.splitlines()[-1][:300] if err else "yt-dlp subtitle failed")
+
+    vtts = sorted(out_dir.glob(f"{video_id}*.vtt"))
+    if not vtts:
+        raise RuntimeError("yt-dlp wrote no VTT subtitles")
+    # Prefer English, then Hindi, then first file
+    preferred = sorted(
+        vtts,
+        key=lambda p: (
+            0 if ".en" in p.name else 1 if ".hi" in p.name else 2,
+            len(p.name),
+        ),
+    )
+    segments = _parse_vtt(preferred[0].read_text(encoding="utf-8", errors="ignore"))
+    # cleanup
+    try:
+        for p in out_dir.iterdir():
+            p.unlink(missing_ok=True)
+        out_dir.rmdir()
+    except Exception:
+        pass
+    if not segments:
+        raise RuntimeError("parsed empty VTT")
+    return segments
+
+
 def _fetch_captions_proxy(video_id: str) -> tuple[list[Segment], str | None]:
     proxy = (settings.youtube_caption_proxy or "").strip().rstrip("/")
     if not proxy:
@@ -235,6 +336,13 @@ def fetch_youtube_captions(url: str) -> tuple[str, list[Segment], float | None]:
             segments = _fetch_captions_library(video_id)
         except Exception as exc:
             errors.append(f"library: {exc}")
+
+    # yt-dlp subtitles (cookie *file*) — often works when Cookie-header InnerTube 413/bot-blocks.
+    if not segments:
+        try:
+            segments = _fetch_captions_ytdlp(video_id)
+        except Exception as exc:
+            errors.append(f"ytdlp: {exc}")
 
     # Vercel (or other) proxy — different IP from Render datacenter.
     if not segments:
