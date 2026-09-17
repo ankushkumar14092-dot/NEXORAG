@@ -827,9 +827,9 @@
       }
 
       if (ytCloud || localOk) {
-        bits.push(localOk ? "YouTube OK (local bridge)" : "YouTube cookies on (cloud)");
+        bits.push(localOk ? "YouTube OK (local bridge)" : "YouTube cookies installed (refresh if URL fails)");
       } else {
-        bits.push("YouTube: upload MP4 or refresh cookies");
+        bits.push("YouTube: upload MP4 or add fresh cookies");
       }
       if (memBit) bits.push(memBit);
 
@@ -931,11 +931,11 @@
         if (!cloudReady) {
           return setMsg(
             "ingestMsg",
-            "YouTube blocked on cloud. Upload MP4, or push logged-in cookies (scripts/push_youtube_cookies.py).",
+            "YouTube blocked on cloud. Upload MP4, or export fresh logged-in cookies and push them.",
             true
           );
         }
-        setMsg("ingestMsg", "Captions blocked — downloading audio on cloud…");
+        setMsg("ingestMsg", "Captions blocked — trying cloud download…");
       } else {
         setMsg("ingestMsg", "Queuing URL…");
       }
