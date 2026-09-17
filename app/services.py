@@ -329,7 +329,8 @@ class QueryService:
                 "end": h.chunk.end,
                 "start_label": h.chunk.start_label,
                 "end_label": h.chunk.end_label,
-                "text": h.chunk.text,
+                # Cap evidence text — UI + cache share this payload
+                "text": (h.chunk.text or "")[:900],
                 "score": round(h.score, 4),
                 "channels": getattr(h, "channels", None),
                 "video_id": h.chunk.source_id or h.chunk.video_id,

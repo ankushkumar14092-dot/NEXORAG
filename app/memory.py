@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 import time
 from collections import OrderedDict
 from typing import Any
 
 from app.config import settings
+
+
+def _estimate_bytes(value: Any) -> int:
+    """Prefer accurate JSON size so LRU byte budgets actually work."""
+    try:
+        raw = json.dumps(value, ensure_ascii=False, default=str)
+        return max(64, len(raw.encode("utf-8")) + 64)
+    except Exception:
+        return max(64, len(str(value)) + 128)
 
 
 class TempRAMCache:
@@ -16,6 +26,7 @@ class TempRAMCache:
     Features:
     - TTL expiry
     - LRU eviction when entry/byte budget exceeded
+    - Skip caching oversized single payloads
     - Thread-safe
 
     Used for query briefing cache and short-lived index scratch data.
@@ -26,15 +37,19 @@ class TempRAMCache:
         max_entries: int | None = None,
         max_bytes: int | None = None,
         default_ttl_seconds: float | None = None,
+        max_entry_bytes: int | None = None,
     ) -> None:
         self.max_entries = max_entries or settings.ram_cache_max_entries
         self.max_bytes = max_bytes or settings.ram_cache_max_mb * 1024 * 1024
         self.default_ttl = default_ttl_seconds or settings.ram_cache_ttl_seconds
+        # Single entry hard cap (default 2MB) — prevents one briefing from blowing the budget
+        self.max_entry_bytes = max_entry_bytes or min(2 * 1024 * 1024, self.max_bytes)
         self._lock = threading.RLock()
         self._data: OrderedDict[str, tuple[float, int, Any]] = OrderedDict()
         self._hits = 0
         self._misses = 0
         self._evictions = 0
+        self._skipped_oversized = 0
         self._bytes = 0
 
     @staticmethod
@@ -61,8 +76,11 @@ class TempRAMCache:
     def set(self, key: str, value: Any, ttl_seconds: float | None = None) -> None:
         ttl = self.default_ttl if ttl_seconds is None else ttl_seconds
         expires = time.monotonic() + max(1.0, float(ttl))
-        size = max(64, len(str(value)) + 128)
+        size = _estimate_bytes(value)
         with self._lock:
+            if size > self.max_entry_bytes:
+                self._skipped_oversized += 1
+                return
             if key in self._data:
                 self._remove(key)
             self._data[key] = (expires, size, value)
@@ -102,10 +120,12 @@ class TempRAMCache:
                 "hits": self._hits,
                 "misses": self._misses,
                 "evictions": self._evictions,
+                "skipped_oversized": self._skipped_oversized,
                 "entries": len(self._data),
                 "bytes_used": self._bytes,
                 "max_entries": self.max_entries,
                 "max_bytes": self.max_bytes,
+                "max_entry_bytes": self.max_entry_bytes,
                 "ttl_seconds": self.default_ttl,
             }
 
@@ -131,8 +151,3 @@ class TempRAMCache:
 
 
 query_cache = TempRAMCache()
-index_cache = TempRAMCache(
-    max_entries=32,
-    max_bytes=64 * 1024 * 1024,
-    default_ttl_seconds=300,
-)

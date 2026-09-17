@@ -46,3 +46,22 @@ def test_ram_cache_ttl_and_lru():
     stats = cache.stats()
     assert stats["entries"] <= 2
     assert stats["hits"] >= 1
+
+
+def test_ram_cache_byte_budget_and_oversized_skip():
+    cache = TempRAMCache(
+        max_entries=50,
+        max_bytes=2_000,
+        default_ttl_seconds=60,
+        max_entry_bytes=1_500,
+    )
+    cache.set("small", {"text": "hi"})
+    assert cache.get("small") is not None
+    cache.set("huge", {"text": "x" * 5000})
+    assert cache.get("huge") is None
+    assert cache.stats()["skipped_oversized"] >= 1
+    # Fill past byte budget with many medium entries
+    for i in range(20):
+        cache.set(f"k{i}", {"text": "y" * 200})
+    assert cache.stats()["bytes_used"] <= cache.max_bytes
+    assert cache.stats()["entries"] <= cache.max_entries

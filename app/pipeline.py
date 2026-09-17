@@ -14,8 +14,20 @@ from app.ingest import (
     resolve_title_from_url,
     transcribe_audio,
 )
+from app.hybrid import hybrid_retriever
 from app.models import SourceRecord, extract_youtube_id, is_youtube_host, new_id, store, utc_now
 from app.rag import retriever
+
+
+def _index_ready(record: SourceRecord) -> None:
+    """Persist ready record without raw ASR/caption segments (chunks are enough)."""
+    record.segments = []
+    record.status = "ready"
+    record.error = None
+    record.updated_at = utc_now()
+    store.save(record)
+    retriever.refresh()
+    hybrid_retriever.invalidate()
 
 def create_upload_record(filename: str, saved_path: Path) -> SourceRecord:
     record = SourceRecord(
@@ -91,9 +103,7 @@ def process_video(video_id: str) -> None:
             _process_url(record)
         else:
             _process_upload(record)
-        record.status = "ready"
-        store.save(record)
-        retriever.refresh()
+        _index_ready(record)
     except Exception as exc:
         record.status = "error"
         record.error = str(exc)
@@ -136,6 +146,7 @@ def process_document(doc_id: str) -> None:
         record.status = "ready"
         store.save(record)
         retriever.refresh()
+        hybrid_retriever.invalidate()
     except Exception as exc:
         record.status = "error"
         record.error = str(exc)
@@ -188,10 +199,10 @@ def _process_url(record: SourceRecord) -> None:
     if not segments:
         raise RuntimeError("No transcript segments produced")
 
-    record.segments = segments
     record.duration = duration
     record.transcript_method = method
     record.chunks = segments_to_chunks(record.id, segments)
+    # segments discarded in _index_ready
 
 def apply_caption_segments(
     record: SourceRecord,
@@ -218,15 +229,10 @@ def apply_caption_segments(
         raise RuntimeError("No caption segments to index")
     if title:
         record.title = title[:200]
-    record.segments = typed
     record.duration = typed[-1].end
     record.transcript_method = method
     record.chunks = segments_to_chunks(record.id, typed)
-    record.status = "ready"
-    record.error = None
-    record.updated_at = utc_now()
-    store.save(record)
-    retriever.refresh()
+    _index_ready(record)
 
 
 def process_prefetched_captions(
@@ -269,7 +275,6 @@ def _process_upload(record: SourceRecord) -> None:
     if not segments:
         raise RuntimeError("Whisper produced empty transcript")
 
-    record.segments = segments
     record.duration = duration
     record.transcript_method = "whisper"
     record.chunks = segments_to_chunks(record.id, segments)

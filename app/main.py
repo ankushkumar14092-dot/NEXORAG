@@ -37,6 +37,7 @@ from app.recovery import backup_store, list_backups, restore_store
 from app.security import SecurityError, sanitize_filename
 from app.services import build_upload_path, query_service, source_service
 from app.desk_snapshot import export_desk_snapshot, import_desk_snapshot
+from app.footprint import desk_footprint
 from app.storage_status import storage_status
 from app.youtube_auth import youtube_auth_status
 
@@ -101,13 +102,13 @@ class DeskSnapshotImportRequest(BaseModel):
 class CaptionSegIn(BaseModel):
     start: float = Field(..., ge=0)
     end: float = Field(..., ge=0)
-    text: str = Field(..., min_length=1, max_length=8000)
+    text: str = Field(..., min_length=1, max_length=2000)
 
 
 class CaptionsIngestRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=2000)
     title: str | None = Field(default=None, max_length=300)
-    segments: list[CaptionSegIn] = Field(..., min_length=1, max_length=60000)
+    segments: list[CaptionSegIn] = Field(..., min_length=1, max_length=20000)
     method: str = Field(default="youtube_captions_proxy", max_length=64)
 
 
@@ -174,6 +175,7 @@ async def health() -> dict:
         "supported_docs": sorted(DOC_EXTENSIONS),
         "youtube": youtube_auth_status(),
         "storage": storage_status(),
+        "memory": desk_footprint(),
     }
 
 

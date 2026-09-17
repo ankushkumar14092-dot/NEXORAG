@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     top_k: int = 6
 
     # Temporary RAM cache (process memory — not durable)
+    # Defaults tuned for small cloud instances (Render Free/Starter)
     ram_cache_ttl_seconds: float = 600.0
-    ram_cache_max_entries: int = 256
-    ram_cache_max_mb: int = 128
+    ram_cache_max_entries: int = 64
+    ram_cache_max_mb: int = 48
 
     # Operations / security
     rate_limit_per_minute: int = 120
