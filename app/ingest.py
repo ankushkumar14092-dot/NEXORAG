@@ -188,6 +188,40 @@ def _fetch_captions_library(video_id: str) -> list[Segment]:
     return segments
 
 
+def _ytdlp_base_cmd() -> list[str]:
+    """Common yt-dlp flags; Node is required for current YouTube extractors."""
+    return [
+        "yt-dlp",
+        "--js-runtimes",
+        "node",
+        "--no-playlist",
+    ]
+
+
+def _ytdlp_auth_args() -> list[str]:
+    from app.youtube_auth import ensure_youtube_cookie_file, youtube_proxy_url
+
+    args: list[str] = []
+    cookies = ensure_youtube_cookie_file()
+    if cookies:
+        args.extend(["--cookies", str(cookies)])
+    proxy = youtube_proxy_url()
+    if proxy:
+        args.extend(["--proxy", proxy])
+    return args
+
+
+def _ytdlp_error_text(result: subprocess.CompletedProcess[str]) -> str:
+    blob = ((result.stderr or "") + "\n" + (result.stdout or "")).strip()
+    if not blob:
+        return "yt-dlp failed"
+    lines = [ln.strip() for ln in blob.splitlines() if ln.strip()]
+    for ln in reversed(lines):
+        if ln.startswith("ERROR:"):
+            return ln[:400]
+    return lines[-1][:400]
+
+
 def _parse_vtt(text: str) -> list[Segment]:
     """Minimal WebVTT → segments (enough for YouTube auto-subs)."""
     segments: list[Segment] = []
@@ -235,13 +269,11 @@ def _fetch_captions_ytdlp(video_id: str) -> list[Segment]:
     """Pull official/auto subs via yt-dlp (cookie file, not Cookie header)."""
     import tempfile
 
-    from app.youtube_auth import ensure_youtube_cookie_file, youtube_proxy_url
-
     out_dir = Path(tempfile.mkdtemp(prefix="nexora_yt_subs_"))
     out_tmpl = str(out_dir / video_id)
     url = f"https://www.youtube.com/watch?v={video_id}"
     cmd = [
-        "yt-dlp",
+        *_ytdlp_base_cmd(),
         "--skip-download",
         "--write-auto-sub",
         "--write-sub",
@@ -251,19 +283,12 @@ def _fetch_captions_ytdlp(video_id: str) -> list[Segment]:
         "vtt/best",
         "-o",
         out_tmpl,
-        "--no-playlist",
+        *_ytdlp_auth_args(),
         url,
     ]
-    cookies = ensure_youtube_cookie_file()
-    if cookies:
-        cmd.extend(["--cookies", str(cookies)])
-    proxy = youtube_proxy_url()
-    if proxy:
-        cmd.extend(["--proxy", proxy])
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        err = (result.stderr or result.stdout or "yt-dlp subtitle failed").strip()
-        raise RuntimeError(err.splitlines()[-1][:300] if err else "yt-dlp subtitle failed")
+        raise RuntimeError(_ytdlp_error_text(result))
 
     vtts = sorted(out_dir.glob(f"{video_id}*.vtt"))
     if not vtts:
@@ -365,10 +390,8 @@ def fetch_youtube_captions(url: str) -> tuple[str, list[Segment], float | None]:
 def download_audio_from_url(url: str, out_dir: Path) -> tuple[Path, str]:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_tmpl = str(out_dir / "%(id)s.%(ext)s")
-    from app.youtube_auth import ensure_youtube_cookie_file, youtube_proxy_url
-
     cmd = [
-        "yt-dlp",
+        *_ytdlp_base_cmd(),
         "-f",
         "bestaudio/best",
         "-x",
@@ -378,18 +401,12 @@ def download_audio_from_url(url: str, out_dir: Path) -> tuple[Path, str]:
         "5",
         "-o",
         out_tmpl,
-        "--no-playlist",
+        *_ytdlp_auth_args(),
+        url,
     ]
-    cookies = ensure_youtube_cookie_file()
-    if cookies:
-        cmd.extend(["--cookies", str(cookies)])
-    proxy = youtube_proxy_url()
-    if proxy:
-        cmd.extend(["--proxy", proxy])
-    cmd.append(url)
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "yt-dlp failed")
+        raise RuntimeError(_ytdlp_error_text(result))
 
     mp3s = sorted(out_dir.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not mp3s:
