@@ -46,6 +46,8 @@ class TempRAMCache:
         self.max_entry_bytes = max_entry_bytes or min(2 * 1024 * 1024, self.max_bytes)
         self._lock = threading.RLock()
         self._data: OrderedDict[str, tuple[float, int, Any]] = OrderedDict()
+        # key -> source_ids referenced by the cached payload (keys are hashes)
+        self._key_sources: dict[str, set[str]] = {}
         self._hits = 0
         self._misses = 0
         self._evictions = 0
@@ -85,23 +87,42 @@ class TempRAMCache:
                 self._remove(key)
             self._data[key] = (expires, size, value)
             self._bytes += size
+            self._key_sources[key] = self._source_ids_from_value(value)
             self._trim()
+
+    @staticmethod
+    def _source_ids_from_value(value: Any) -> set[str]:
+        found: set[str] = set()
+        if not isinstance(value, dict):
+            return found
+        sid = value.get("source_id")
+        if isinstance(sid, str) and sid:
+            found.add(sid)
+        for item in value.get("source_ids") or []:
+            if isinstance(item, str) and item:
+                found.add(item)
+        for ev in value.get("evidence") or []:
+            if not isinstance(ev, dict):
+                continue
+            for field in ("source_id", "video_id"):
+                v = ev.get(field)
+                if isinstance(v, str) and v:
+                    found.add(v)
+        return found
 
     def invalidate_source(self, source_id: str) -> int:
         removed = 0
         with self._lock:
             drop: list[str] = []
-            for k, (_e, _s, v) in self._data.items():
-                if source_id in k:
+            for k, sids in self._key_sources.items():
+                if source_id in sids:
                     drop.append(k)
+            for k, (_e, _s, v) in self._data.items():
+                if k in drop:
                     continue
-                if isinstance(v, dict):
-                    if v.get("source_id") == source_id:
-                        drop.append(k)
-                        continue
-                    sids = v.get("source_ids") or []
-                    if source_id in sids:
-                        drop.append(k)
+                # Legacy payloads without index metadata
+                if source_id in self._source_ids_from_value(v):
+                    drop.append(k)
             for k in drop:
                 self._remove(k)
                 removed += 1
@@ -111,6 +132,7 @@ class TempRAMCache:
     def clear(self) -> None:
         with self._lock:
             self._data.clear()
+            self._key_sources.clear()
             self._bytes = 0
 
     def stats(self) -> dict[str, Any]:
@@ -131,6 +153,7 @@ class TempRAMCache:
 
     def _remove(self, key: str) -> None:
         item = self._data.pop(key, None)
+        self._key_sources.pop(key, None)
         if item:
             self._bytes = max(0, self._bytes - item[1])
 

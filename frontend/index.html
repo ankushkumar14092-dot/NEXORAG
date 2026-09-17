@@ -796,11 +796,16 @@
       let localOk = false;
       let persistent = null;
       let ytCloud = false;
+      let memBit = "";
       try {
         const health = await apiFetch("/api/health").then((r) => r.json());
         apiOk = !!health.ok;
         persistent = !!(health.storage && health.storage.persistent);
         ytCloud = !!(health.youtube && health.youtube.cloud_youtube_ready);
+        const ram = health.ram_cache || {};
+        const mem = health.memory || {};
+        const rss = mem.rss_mb != null ? `${mem.rss_mb}MB` : "?";
+        memBit = `RAM ${rss} · cache ${ram.entries || 0}/${ram.max_entries || 64} · ${mem.chunks || 0} ch`;
       } catch (e) {
         apiOk = false;
       }
@@ -826,16 +831,37 @@
       } else {
         bits.push("YouTube: start local :8000 for URL ingest");
       }
+      if (memBit) bits.push(memBit);
 
       ops.textContent = bits.join(" · ");
       // Red only for real breakage — not Free-plan ephemeral storage
       ops.classList.toggle("bad", !apiOk || (!ytCloud && !localOk && mode === "video"));
     }
 
+    function pruneDeskMirror(id) {
+      try {
+        const raw = localStorage.getItem(DESK_SNAP_KEY);
+        if (!raw) return;
+        const snap = JSON.parse(raw);
+        if (!snap || !Array.isArray(snap.sources)) return;
+        snap.sources = snap.sources.filter((s) => s && s.id !== id);
+        snap.source_count = snap.sources.length;
+        if (!snap.sources.length) localStorage.removeItem(DESK_SNAP_KEY);
+        else localStorage.setItem(DESK_SNAP_KEY, JSON.stringify(snap));
+      } catch (e) {}
+    }
+
+    function clearDeskMirror() {
+      try { localStorage.removeItem(DESK_SNAP_KEY); } catch (e) {}
+    }
+
     async function mirrorDeskToBrowser() {
       try {
         const snap = await apiFetch("/api/export/desk").then((r) => r.json());
-        if (!snap || !snap.source_count) return;
+        if (!snap || !snap.source_count) {
+          clearDeskMirror();
+          return;
+        }
         const raw = JSON.stringify(snap);
         if (raw.length > 4_500_000) return; // localStorage safety
         localStorage.setItem(DESK_SNAP_KEY, raw);
@@ -848,6 +874,10 @@
         if (!raw) return false;
         const snap = JSON.parse(raw);
         if (!snap || !Array.isArray(snap.sources) || !snap.sources.length) return false;
+        // Never restore over a non-empty desk — would resurrect deleted sources
+        const live = await apiFetch("/api/sources").then((r) => r.json()).catch(() => null);
+        const liveReady = ((live && live.sources) || []).filter((s) => s.status === "ready").length;
+        if (liveReady > 0) return false;
         const res = await apiFetch("/api/import/desk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -973,8 +1003,12 @@
           return;
         }
         if (selectedId === id) selectedId = null;
+        pruneDeskMirror(id);
         setMsg("ingestMsg", `Deleted · ${data.title || label}`);
         await refreshSources();
+        // Keep browser mirror aligned so empty-mode tabs cannot resurrect deletes
+        await mirrorDeskToBrowser();
+        bootOpsStatus();
       } catch (err) {
         setMsg("ingestMsg", "Delete failed", true);
       }
@@ -1032,16 +1066,27 @@
       if (busy) startPolling();
       else stopPolling();
 
-      const readyCount = data.sources.filter((v) => v.status === "ready").length;
-      if (readyCount > 0) {
-        mirrorDeskToBrowser();
-      } else if (!busy && !restoreAttempted) {
-        restoreAttempted = true;
-        const restored = await maybeRestoreDeskFromBrowser();
-        if (restored) {
-          restoreAttempted = false;
-          await refreshSources();
-        }
+      // Mirror / restore must use the FULL desk — mode filter alone is empty after
+      // deleting the last video while documents remain, and used to resurrect deletes.
+      if (!busy) {
+        try {
+          const all = await apiFetch("/api/sources").then((r) => r.json());
+          const allReady = (all.sources || []).filter((v) => v.status === "ready").length;
+          if (allReady > 0) {
+            mirrorDeskToBrowser();
+          } else if (!restoreAttempted) {
+            restoreAttempted = true;
+            const restored = await maybeRestoreDeskFromBrowser();
+            if (restored) {
+              restoreAttempted = false;
+              await refreshSources();
+            } else {
+              clearDeskMirror();
+            }
+          } else {
+            clearDeskMirror();
+          }
+        } catch (e) {}
       }
     }
 

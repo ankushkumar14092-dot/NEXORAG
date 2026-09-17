@@ -65,3 +65,29 @@ def test_ram_cache_byte_budget_and_oversized_skip():
         cache.set(f"k{i}", {"text": "y" * 200})
     assert cache.stats()["bytes_used"] <= cache.max_bytes
     assert cache.stats()["entries"] <= cache.max_entries
+
+
+def test_ram_cache_invalidate_source_by_payload():
+    cache = TempRAMCache(max_entries=10, max_bytes=10_000_000, default_ttl_seconds=60)
+    k1 = TempRAMCache.make_key("q", "vid_aaa", "hello")
+    k2 = TempRAMCache.make_key("q", "vid_bbb", "hello")
+    cache.set(
+        k1,
+        {
+            "answer": "a",
+            "source_ids": ["vid_aaa111111"],
+            "evidence": [{"source_id": "vid_aaa111111", "text": "x"}],
+        },
+    )
+    cache.set(
+        k2,
+        {
+            "answer": "b",
+            "source_ids": ["vid_bbb222222"],
+            "evidence": [{"source_id": "vid_bbb222222", "text": "y"}],
+        },
+    )
+    removed = cache.invalidate_source("vid_aaa111111")
+    assert removed == 1
+    assert cache.get(k1) is None
+    assert cache.get(k2) is not None

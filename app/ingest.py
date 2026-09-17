@@ -31,6 +31,20 @@ def get_whisper():
     return _whisper_model
 
 
+def release_whisper() -> None:
+    """Drop Whisper weights after a job so Free-tier RAM can recover."""
+    global _whisper_model
+    if _whisper_model is None:
+        return
+    _whisper_model = None
+    try:
+        import gc
+
+        gc.collect()
+    except Exception:
+        pass
+
+
 def _segments_from_json3(payload: dict) -> list[Segment]:
     segments: list[Segment] = []
     for event in payload.get("events") or []:
@@ -298,22 +312,26 @@ def extract_audio_from_video(video_path: Path, out_dir: Path) -> Path:
 
 
 def transcribe_audio(audio_path: Path) -> tuple[list[Segment], float | None]:
-    model = get_whisper()
-    segments_iter, info = model.transcribe(
-        str(audio_path),
-        beam_size=1,
-        vad_filter=True,
-    )
-    segments: list[Segment] = []
-    for seg in segments_iter:
-        text = seg.text.strip()
-        if not text:
-            continue
-        segments.append(Segment(start=float(seg.start), end=float(seg.end), text=text))
-    duration = float(info.duration) if info and info.duration else (
-        segments[-1].end if segments else None
-    )
-    return segments, duration
+    try:
+        model = get_whisper()
+        segments_iter, info = model.transcribe(
+            str(audio_path),
+            beam_size=1,
+            vad_filter=True,
+        )
+        segments: list[Segment] = []
+        for seg in segments_iter:
+            text = seg.text.strip()
+            if not text:
+                continue
+            segments.append(Segment(start=float(seg.start), end=float(seg.end), text=text))
+        duration = float(info.duration) if info and info.duration else (
+            segments[-1].end if segments else None
+        )
+        return segments, duration
+    finally:
+        # Always unload — reload cost beats OOM on Render Free
+        release_whisper()
 
 
 def resolve_title_from_url(url: str) -> str:

@@ -63,6 +63,8 @@ class HybridRetriever:
     def invalidate(self) -> None:
         self._matrix = None
         self._built_revision = -1
+        # Drop prior vocabulary so deleted sources cannot linger in RAM
+        self._tfidf = TfidfVectorizer(ngram_range=(1, 2), max_features=40000, min_df=1)
 
     def search(
         self,

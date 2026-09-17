@@ -114,6 +114,12 @@ class SourceService:
             query_cache.invalidate_source(sid)
             retriever.invalidate()
             hybrid_retriever.invalidate()
+            try:
+                import gc
+
+                gc.collect()
+            except Exception:
+                pass
 
             return {
                 "deleted": sid,
